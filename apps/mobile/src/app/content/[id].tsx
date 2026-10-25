@@ -1,0 +1,410 @@
+/**
+ * İçerik detayı: hero, üstveri, özet, kadro, sezon/bölümler.
+ *
+ * ÖNEMLİ (dürüst kapsam): oynatma Faz 4'te devreye alınacaktır; bu ekranda
+ * oynat düğmesi sahte bir oynatma başlatmaz, bilgilendirme gösterir.
+ * Planıma ekleme yerel ve GERÇEK çalışır.
+ */
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/theme';
+import { useT } from '@/i18n';
+import { useContentDetail } from '@/hooks/queries/use-content-detail';
+import { ScreenContainer } from '@/components/screen-container';
+import { PosterCard } from '@/components/ui/poster-card';
+import { AppBadge } from '@/components/ui/app-badge';
+import { AppButton } from '@/components/ui/app-button';
+import { AppText } from '@/components/ui/app-text';
+import { LoadingView } from '@/components/state-views/loading-view';
+import { ErrorView } from '@/components/state-views/error-view';
+import { useWatchlistStore } from '@/store/watchlist-store';
+import { ApiClientError } from '@/services/api-client';
+import { radius, spacing } from '@/theme/tokens';
+import { formatDuration } from '@/utils/format';
+import { getAccessVisual } from '@/utils/access';
+import type { AccessType, Episode } from '@perdego/contracts';
+
+function EpisodeRow({
+  episode,
+  onPress,
+}: {
+  episode: Episode;
+  onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  const t = useT();
+  const styles = rowStyles(theme.colors);
+  const access = getAccessVisual(episode.accessType);
+
+  return (
+    <View style={styles.row}>
+      <PosterCard
+        title={episode.title}
+        aspect="vertical"
+        imageUrl={episode.verticalPreviewUrl ?? null}
+        accessType={episode.accessType}
+        width={72}
+        onPress={onPress}
+      />
+      <View style={styles.texts}>
+        <AppText variant="heading" numberOfLines={1}>
+          {t('content.episodeLabel', { number: episode.episodeNumber })}
+        </AppText>
+        <AppText variant="body" color="textMuted" numberOfLines={1}>
+          {episode.title}
+        </AppText>
+        <View style={styles.metaRow}>
+          <AppText variant="caption" color="textSubtle">
+            {formatDuration(episode.durationSeconds)}
+          </AppText>
+          {access.locked ? (
+            <Ionicons
+              name="lock-closed-outline"
+              size={14}
+              color={theme.colors.textSubtle}
+              style={styles.lockIcon}
+            />
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export default function ContentDetailScreen() {
+  const { theme } = useTheme();
+  const t = useT();
+  const styles = getStyles(theme.colors);
+  const params = useLocalSearchParams<{ id: string }>();
+  const contentId = typeof params.id === 'string' ? params.id : '';
+  const detail = useContentDetail(contentId);
+
+  const watchlistItems = useWatchlistStore((state) => state.items);
+  const addToWatchlist = useWatchlistStore((state) => state.add);
+  const removeFromWatchlist = useWatchlistStore((state) => state.remove);
+  const inList = watchlistItems.some((entry) => entry.contentId === contentId);
+
+  const [activeSeason, setActiveSeason] = useState(1);
+
+  const content = detail.data;
+
+  const notifyPlaybackUnavailable = useCallback(() => {
+    Alert.alert(
+      t('content.watchUnavailableTitle'),
+      t('content.watchUnavailableBody')
+    );
+  }, [t]);
+
+  const toggleWatchlist = useCallback(() => {
+    if (!content) return;
+    if (inList) {
+      removeFromWatchlist(content.id);
+    } else {
+      addToWatchlist({
+        contentId: content.id,
+        slug: content.slug,
+        kind: content.kind,
+        title: content.title,
+        releaseYear: content.releaseYear,
+        ageRating: content.ageRating,
+        genres: content.genres,
+        posterUrl: content.posterUrl,
+        verticalPreviewUrl: content.verticalPreviewUrl,
+        accessType: content.accessType,
+        isNew: content.isNew,
+      });
+    }
+  }, [addToWatchlist, content, inList, removeFromWatchlist]);
+
+  const metaLine = useMemo(() => {
+    if (!content) return '';
+    const parts: string[] = [String(content.releaseYear)];
+    if (content.kind === 'SERIES') {
+      parts.push(`${content.seasons.length} ${'Sezon'}`);
+    } else if (content.durationSeconds) {
+      parts.push(formatDuration(content.durationSeconds));
+    }
+    if (content.ageRating) {
+      parts.push(content.ageRating);
+    }
+    return parts.join(' • ');
+  }, [content]);
+
+  const body = useMemo(() => {
+    if (!contentId || detail.isPending) {
+      return <LoadingView variant="detail" />;
+    }
+    if (detail.isError) {
+      const error = detail.error;
+      const isNotFound =
+        error instanceof ApiClientError && error.code === 'NOT_FOUND';
+      const isNetwork =
+        error instanceof ApiClientError && error.isNetworkFailure;
+      return (
+        <ErrorView
+          kind={isNetwork ? 'network' : 'generic'}
+          title={isNotFound ? t('content.notFoundTitle') : t('error.genericTitle')}
+          body={isNotFound ? t('content.notFoundBody') : t('error.genericBody')}
+          onRetry={isNotFound ? undefined : () => detail.refetch()}
+          style={styles.centered}
+        />
+      );
+    }
+    return null;
+  }, [contentId, detail, t, styles.centered]);
+
+  if (body || !content) {
+    return (
+      <ScreenContainer>
+        {body ?? (
+          <ErrorView
+            title={t('content.notFoundTitle')}
+            body={t('content.notFoundBody')}
+            onRetry={() => router.back()}
+            retryLabel={t('common.close')}
+            style={styles.centered}
+          />
+        )}
+      </ScreenContainer>
+    );
+  }
+
+  const currentSeason =
+    content.seasons.find((season) => season.seasonNumber === activeSeason) ??
+    content.seasons[0];
+
+  const accessLabelMap: Record<AccessType, string> = {
+    FREE: t('access.FREE'),
+    SUBSCRIPTION: t('access.SUBSCRIPTION'),
+    CREDIT: t('access.CREDIT'),
+  };
+
+  return (
+    <ScreenContainer>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <PosterCard
+          title={content.title}
+          aspect="wide"
+          imageUrl={content.heroImageUrl ?? content.posterUrl ?? null}
+          accessType={content.accessType}
+          isNew={content.isNew}
+        />
+
+        <View style={styles.body}>
+          <View style={styles.titleRow}>
+            <AppText variant="display" style={styles.title}>
+              {content.title}
+            </AppText>
+          </View>
+          {content.tagline ? (
+            <AppText variant="body" color="textMuted">
+              {content.tagline}
+            </AppText>
+          ) : null}
+          <View style={styles.metaRow}>
+            <AppText variant="caption" color="textSubtle">
+              {metaLine}
+            </AppText>
+            <AppBadge label={accessLabelMap[content.accessType]} tone="outline" />
+          </View>
+          <View style={styles.genreRow}>
+            {content.genres.map((genre) => (
+              <View key={genre} style={styles.genreChip}>
+                <AppText variant="caption" color="textMuted">
+                  {genre.replace(/-/g, ' ')}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.actions}>
+            <View style={styles.actionButton}>
+              <AppButton label={t('content.watchCta')} onPress={notifyPlaybackUnavailable} />
+            </View>
+            <View style={styles.actionButton}>
+              <AppButton
+                label={inList ? t('content.inList') : t('content.addToList')}
+                variant={inList ? 'secondary' : 'ghost'}
+                onPress={toggleWatchlist}
+              />
+            </View>
+          </View>
+
+          <AppText variant="body" style={styles.synopsis}>
+            {content.synopsis}
+          </AppText>
+
+          {content.cast.length > 0 ? (
+            <View style={styles.section}>
+              <AppText variant="heading">{t('content.castTitle')}</AppText>
+              {content.cast.map((member) => (
+                <View key={member.id} style={styles.castRow}>
+                  <AppText variant="body">{member.fullName}</AppText>
+                  <AppText variant="caption" color="textSubtle">
+                    {member.role === 'ACTOR'
+                      ? member.characterName
+                        ? `${t('content.roleActor')} • ${member.characterName}`
+                        : t('content.roleActor')
+                      : member.role === 'DIRECTOR'
+                        ? t('content.roleDirector')
+                        : t('content.roleWriter')}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {content.kind === 'SERIES' && content.seasons.length > 0 ? (
+            <View style={styles.section}>
+              <AppText variant="heading">{t('content.episodesTitle')}</AppText>
+              {content.seasons.length > 1 ? (
+                <View style={styles.seasonRow}>
+                  {content.seasons.map((season) => {
+                    const active = season.seasonNumber === activeSeason;
+                    return (
+                      <Pressable
+                        key={season.id}
+                        style={[styles.seasonChip, active && styles.seasonChipActive]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={t('content.seasonLabel', {
+                          number: season.seasonNumber,
+                        })}
+                        onPress={() => setActiveSeason(season.seasonNumber)}
+                      >
+                        <AppText
+                          variant="label"
+                          style={active ? undefined : { color: theme.colors.textMuted }}
+                        >
+                          {t('content.seasonLabel', { number: season.seasonNumber })}
+                        </AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+              <View style={styles.episodeList}>
+                {currentSeason?.episodes.map((episode) => (
+                  <EpisodeRow
+                    key={episode.id}
+                    episode={episode}
+                    onPress={notifyPlaybackUnavailable}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
+    </ScreenContainer>
+  );
+}
+
+const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
+  StyleSheet.create({
+    centered: {
+      flex: 1,
+      justifyContent: 'center',
+    },
+    body: {
+      padding: spacing[4],
+      gap: spacing[3],
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    title: {
+      flex: 1,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      flexWrap: 'wrap',
+    },
+    genreRow: {
+      flexDirection: 'row',
+      gap: spacing[2],
+      flexWrap: 'wrap',
+    },
+    genreChip: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing[2],
+      paddingVertical: 4,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: spacing[3],
+      marginTop: spacing[2],
+    },
+    actionButton: {
+      flex: 1,
+    },
+    synopsis: {
+      marginTop: spacing[1],
+    },
+    section: {
+      marginTop: spacing[3],
+      gap: spacing[3],
+    },
+    castRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingRight: spacing[2],
+    },
+    seasonRow: {
+      flexDirection: 'row',
+      gap: spacing[2],
+      flexWrap: 'wrap',
+    },
+    seasonChip: {
+      minHeight: 44,
+      paddingHorizontal: spacing[3],
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      justifyContent: 'center',
+    },
+    seasonChipActive: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    episodeList: {
+      gap: spacing[3],
+    },
+  });
+
+const rowStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      gap: spacing[3],
+      alignItems: 'stretch',
+    },
+    texts: {
+      flex: 1,
+      justifyContent: 'center',
+      gap: 2,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    lockIcon: {
+      marginLeft: spacing[1],
+    },
+  });

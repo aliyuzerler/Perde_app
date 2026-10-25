@@ -1,0 +1,23 @@
+{
+  "name": "perdego",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PerdeGo - dikey kisa film ve mini dizi izleme platformu (monorepo)",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "mobile:start": "npm run start --workspace apps/mobile",
+    "mobile:ios": "npm run ios --workspace apps/mobile",
+    "mobile:android": "npm run android --workspace apps/mobile",
+    "contracts:build": "npm run build --workspace packages/contracts",
+    "typecheck": "npm run typecheck --workspace packages/contracts && npm run typecheck --workspace apps/mobile",
+    "lint": "npm run lint --workspace packages/contracts && npm run lint --workspace apps/mobile",
+    "test": "npm run test --workspace packages/contracts && npm run test --workspace apps/mobile"
+  }
+}

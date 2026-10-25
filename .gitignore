@@ -1,2 +1,47 @@
-skills/
+# PerdeGo monorepo
+
+# Bagimliliklar
 node_modules/
+.pnp
+.pnp.js
+
+# Expo / React Native
+.expo/
+*.log
+npm-debug.*
+ios/
+android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Test / kapsam
+coverage/
+
+# Derleme ciktlari
+dist/
+build/
+.tsbuildinfo
+.turbo/
+.next/
+out/
+
+# Cevre degiskenleri - gercek sirlar asla depoya girmesin
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE / isletim sistemi
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Sistem klasoru (proje kodu degil)
+skills/

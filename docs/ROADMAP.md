@@ -64,6 +64,10 @@ token saklama (secure store), auth interceptor.
 **Kabul Kriterleri**: korumalı uca tokensız erişim 401 döner; refresh akışı
 otomatik çalışır; formlar doğrulama hatalarını Türkçe gösterir.
 
+**Durum**: 🚧 3a (mobil UI katmanı) tamam — giriş/kayıt ekranları, oturum
+bilinci ve hesap sözleşmeleri hazır (mock); sunucu tarafı (JWT, rotasyon,
+korumalı uçlar) 3b'de. Bkz. `docs/phases/FAZ-3.md`.
+
 ## Faz 4 — Video Akışı ve Oynatma
 
 **Kapsam**: HLS yayın sağlayıcı entegrasyonu (imzalı kısa süreli URL'ler),

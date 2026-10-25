@@ -102,3 +102,27 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — sonraki faza (mobil görsel tasarım sistemi) geçiş onaylandı.
 - Değişen dosyalar: apps/admin/.env.example (yeni), apps/api/src/main.ts + health.controller.ts, package.json (kök), README.md, docs/qa/FAZ-1-QA.md (yeni).
 - Sonraki ajan için: Docker'lı makinede `pnpm db:up → db:migrate --name init → db:seed` bir kez koşulmalı; Redis Faz 2b+; scripts/qa-pg sandbox QA aracı (node_modules/pgdata git dışı).
+
+---
+Task ID: 6
+Agent: Ana ajan (Z.ai)
+Task: Faz 3a — Mobil görsel tasarım sistemi ve 12 ana ekran (mock veri katmanı açık ayrılmış)
+
+Work Log:
+- (Öncesi) Faz 1 QA kapatıldı: docs/qa/FAZ-1-QA.md (PASS WITH WARNINGS), worklog Task 5, commit.
+- contracts: billing.ts (plan/cüzdan/kredi paketi/hareket) + account.ts (oturum/kategori) şemaları; index.ts güncellendi; 16/16 test yeşil.
+- mobile ports.ts: katalog + abonelik/kredi + hesap yöntemleri; mock adapter tümünü uygular (purchaseCredits/subscribe cüzdan durumunu gerçekten günceller); http-adapter'da sunucuda olmayan uçlar SERVICE_UNAVAILABLE fırlatır (sahte başarı yok).
+- Yeni bileşenler: hero-banner, content-rail, continue-card (ilerleme çubuğu), segmented-control, price-card, setting-row, auth-field. Token'lar ve PosterCard/AppBadge/AppButton yeniden kullanıldı; radius 0-4 ve oran kuralları korundu.
+- Ekranlar: onboarding (kök kapı), ana sayfa (hero + devam rayı + 4 ray + kategori kartları), keşfet (tür filtreli ızgara), category/[slug], arama (mevcut), detay (sezon seçici + bölüm satırları + İzlemeye Başla kaldığı yerden), player/[episodeId] (fullScreenModal; simüle ilerleme playback-store'a YAZILIR — İzlemeye devam et gerçek; kilit + abonelik/kredi CTA; sonraki bölüm), paywall (3 plan, mock subscribe), credits (bakiye kırılımı + paketler + hareketler), library (Favoriler/Devam/Geçmiş), auth/login + register (sözleşme kurallarıyla istemci doğrulama), profile (oturum + abonelik/cüzdan + tercihler + çıkış).
+- Store'lar: auth-store (persist), playback-store (persist; %90 tamamlanma eşiği, devam/geçmiş ayrımı). preferences: hasSeenOnboarding.
+- i18n: tr/en 8 yeni bölüm + tabs.home + profile.subscription/signOut (parite testi yeşil).
+- 5 sekme: Ana Sayfa / Keşfet / Ara / Planım / Profil; watchlist.tsx → library.tsx.
+- Lint hataları giderildi (hooks sırası, render'da ref, import düzeni); absoluteFillObject TS uyumsuzluğu düzeltildi; jest.setup.js'e AsyncStorage mock.
+- Testler: 70/70 (21 yeni: adapter-Faz3 11, playback 4, auth 3, bileşen render 3). RNTL v14 deseni (await render + destructure).
+- expo export iOS + Android ✅; kök typecheck/lint/test yeşil (4 ws, 97 test).
+- Rapor: docs/phases/FAZ-3.md; ROADMAP Faz 3 durum satırı (3a tamam, 3b sunucu).
+
+Stage Summary:
+- 12/12 ekran derlendi ve test edildi; tam yerel işlevsel: gezinme/detay/Planim/onboarding/tercihler/ilerleme. Mock akışlı: giriş-kayıt, paywall, kredi, oynatma kilidi kararı. Sahte başarı yok ("Geliştirme modu" bildirimleri görünür).
+- Kritik kararlar: contract-first yeni alanlar; HTTP adapter dürüst hata ilkesi; playback ilerlemesi gerçek yerel katman (Faz 4'te playback_sessions ile eşleşecek).
+- Sonraki ajan için: Faz 3b (sunucu auth) veya Faz 2b (katalog uçları) — her ikisinde ekranlar hazır; EXPO_PUBLIC_MOCK_API=0 geçişi tek flag. Cihazda iOS/Android görsel doğrulaması makinede yapılmalı.

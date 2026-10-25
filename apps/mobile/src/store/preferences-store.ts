@@ -15,9 +15,12 @@ export interface PreferencesState {
   autoplayPreviews: boolean;
   dataSaver: boolean;
   locale: SupportedLocale;
+  /** Açılış (onboarding) ekranı bir kez gösterilir. */
+  hasSeenOnboarding: boolean;
   setAutoplayPreviews: (value: boolean) => void;
   setDataSaver: (value: boolean) => void;
   setLocale: (value: SupportedLocale) => void;
+  setHasSeenOnboarding: (value: boolean) => void;
 }
 
 /** AsyncStorage, zustand'ın beklediği string tabanlı StateStorage sözleşmesine uyar. */
@@ -37,9 +40,11 @@ export const usePreferencesStore = create<PreferencesState>()(
       autoplayPreviews: true,
       dataSaver: false,
       locale: 'tr',
+      hasSeenOnboarding: false,
       setAutoplayPreviews: (value) => set({ autoplayPreviews: value }),
       setDataSaver: (value) => set({ dataSaver: value }),
       setLocale: (value) => set({ locale: value }),
+      setHasSeenOnboarding: (value) => set({ hasSeenOnboarding: value }),
     }),
     {
       name: 'perdego.preferences.v1',

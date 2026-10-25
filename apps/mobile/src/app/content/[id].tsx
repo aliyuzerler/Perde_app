@@ -26,6 +26,7 @@ import { AppText } from '@/components/ui/app-text';
 import { LoadingView } from '@/components/state-views/loading-view';
 import { ErrorView } from '@/components/state-views/error-view';
 import { useWatchlistStore } from '@/store/watchlist-store';
+import { usePlaybackStore } from '@/store/playback-store';
 import { ApiClientError } from '@/services/api-client';
 import { radius, spacing } from '@/theme/tokens';
 import { formatDuration } from '@/utils/format';
@@ -91,6 +92,12 @@ export default function ContentDetailScreen() {
   const addToWatchlist = useWatchlistStore((state) => state.add);
   const removeFromWatchlist = useWatchlistStore((state) => state.remove);
   const inList = watchlistItems.some((entry) => entry.contentId === contentId);
+
+  // Kayıtlı izleme ilerlemesi (varsa "İzlemeye Başla" kaldığı yerden açar).
+  const playbackEntries = usePlaybackStore((state) => state.entries);
+  const savedEntry = Object.values(playbackEntries).find(
+    (entry) => entry.contentId === contentId
+  );
 
   const [activeSeason, setActiveSeason] = useState(1);
 
@@ -181,6 +188,38 @@ export default function ContentDetailScreen() {
     content.seasons.find((season) => season.seasonNumber === activeSeason) ??
     content.seasons[0];
 
+  /** Oynatma hedefi: önce kayıtlı ilerleme, yoksa ilk bölüm; filmler detay açar. */
+  const firstEpisode = content.seasons[0]?.episodes[0];
+  const savedEpisodeId = savedEntry?.episodeId;
+
+  const startPlayback = () => {
+    if (content.kind === 'SERIES') {
+      if (savedEpisodeId) {
+        router.push({
+          pathname: '/player/[episodeId]',
+          params: { episodeId: savedEpisodeId, contentId: content.id },
+        });
+        return;
+      }
+      if (firstEpisode) {
+        router.push({
+          pathname: '/player/[episodeId]',
+          params: { episodeId: firstEpisode.id, contentId: content.id },
+        });
+      }
+      return;
+    }
+    // FILM / SHORT_FILM: Faz 4'te tek medya olarak oynatılacak.
+    notifyPlaybackUnavailable();
+  };
+
+  const openEpisode = (episode: Episode) => {
+    router.push({
+      pathname: '/player/[episodeId]',
+      params: { episodeId: episode.id, contentId: content.id },
+    });
+  };
+
   const accessLabelMap: Record<AccessType, string> = {
     FREE: t('access.FREE'),
     SUBSCRIPTION: t('access.SUBSCRIPTION'),
@@ -227,7 +266,7 @@ export default function ContentDetailScreen() {
 
           <View style={styles.actions}>
             <View style={styles.actionButton}>
-              <AppButton label={t('content.watchCta')} onPress={notifyPlaybackUnavailable} />
+              <AppButton label={t('content.watchCta')} onPress={startPlayback} />
             </View>
             <View style={styles.actionButton}>
               <AppButton
@@ -296,7 +335,7 @@ export default function ContentDetailScreen() {
                   <EpisodeRow
                     key={episode.id}
                     episode={episode}
-                    onPress={notifyPlaybackUnavailable}
+                    onPress={() => openEpisode(episode)}
                   />
                 ))}
               </View>

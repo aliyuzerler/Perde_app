@@ -10,11 +10,23 @@
  * React Native'e bağımlı DEĞİLDİR (saf TS, test edilebilir).
  */
 import type {
+  AuthSession,
+  Category,
+  CategoryDetailResponse,
+  CategoryListResponse,
   Content,
   ContentSummary,
+  CreditPack,
+  CreditPacksResponse,
   FeedResponse,
+  PlansResponse,
   PublicUserProfile,
   SearchResponse,
+  SubscriptionPlan,
+  Wallet,
+  WalletResponse,
+  WalletTransaction,
+  WalletTransactionsResponse,
 } from '@perdego/contracts';
 
 export const mockProfile: PublicUserProfile = {
@@ -375,14 +387,23 @@ export const mockFeed: FeedResponse = {
     },
     {
       id: 'rail_trend',
-      title: 'Bu Hafta Trendler',
+      title: 'Trend Olan Mini Diziler',
+      layout: 'RAIL',
+      items: [
+        summary(mockContentList[0]!),
+        summary(mockContentList[3]!),
+        summary(mockContentList[7]!),
+      ],
+    },
+    {
+      id: 'rail_verticals',
+      title: 'Popüler Dikey Dramalar',
       layout: 'RAIL',
       items: [
         summary(mockContentList[1]!),
-        summary(mockContentList[6]!),
+        summary(mockContentList[4]!),
         summary(mockContentList[2]!),
-        summary(mockContentList[3]!),
-        summary(mockContentList[7]!),
+        summary(mockContentList[5]!),
       ],
     },
     {
@@ -393,16 +414,18 @@ export const mockFeed: FeedResponse = {
         summary(mockContentList[7]!),
         summary(mockContentList[0]!),
         summary(mockContentList[1]!),
+        summary(mockContentList[6]!),
       ],
     },
     {
-      id: 'rail_shorts',
-      title: 'Kısa Filmler',
+      id: 'rail_films',
+      title: 'Filmler ve Belgeseller',
       layout: 'RAIL',
       items: [
-        summary(mockContentList[1]!),
-        summary(mockContentList[4]!),
+        summary(mockContentList[2]!),
+        summary(mockContentList[6]!),
         summary(mockContentList[5]!),
+        summary(mockContentList[3]!),
       ],
     },
   ],
@@ -449,4 +472,213 @@ export function searchMockContent(
 
 export function findMockContent(contentId: string): Content | undefined {
   return mockContentList.find((content) => content.id === contentId);
+}
+
+// ============================================================================
+// Faz 3 — Kategori, abonelik, kredi ve hesap mock verileri (TAMAMI ÖZGÜN).
+// Ödeme/kimlik işlemleri YALNIZCA geliştirme amaçlıdır; canlı ödeme ve gerçek
+// kimlik doğrulama sonraki fazlarda sunucu tarafında devreye alınır.
+// ============================================================================
+
+/** Kategori listesi (tür slug'ları içeriklerden türetilmiştir). */
+export const mockCategories: Category[] = [
+  { slug: 'dram', name: 'Dram', contentCount: 4 },
+  { slug: 'gizem', name: 'Gizem', contentCount: 2 },
+  { slug: 'gerilim', name: 'Gerilim', contentCount: 2 },
+  { slug: 'bilim-kurgu', name: 'Bilim Kurgu', contentCount: 1 },
+  { slug: 'komedi', name: 'Komedi', contentCount: 1 },
+  { slug: 'suç', name: 'Suç', contentCount: 1 },
+  { slug: 'belgesel', name: 'Belgesel', contentCount: 1 },
+  { slug: 'korku', name: 'Korku', contentCount: 1 },
+];
+
+export const mockCategoryList: CategoryListResponse = {
+  items: mockCategories,
+};
+
+export function findMockCategory(slug: string): CategoryDetailResponse | undefined {
+  const category = mockCategories.find((item) => item.slug === slug);
+  if (!category) return undefined;
+  const items = mockContentList
+    .filter((content) => content.genres.includes(slug))
+    .map((content) => summary(content));
+  return { category, items };
+}
+
+/** Abonelik planları (kurgusal fiyatlar; kuruş cinsinden). */
+export const mockPlans: SubscriptionPlan[] = [
+  {
+    id: 'plan_monthly',
+    name: 'Aylık',
+    billingPeriod: 'MONTHLY',
+    priceKurus: 4990,
+    currency: 'TRY',
+    trialDays: 7,
+    isBestValue: false,
+    benefits: [
+      'Tüm üyelere özel diziler ve filmler',
+      'Reklamsız izleme',
+      'Her cihazda devam etme',
+    ],
+  },
+  {
+    id: 'plan_quarterly',
+    name: '3 Aylık',
+    billingPeriod: 'QUARTERLY',
+    priceKurus: 12990,
+    monthlyEquivalentKurus: 4330,
+    currency: 'TRY',
+    trialDays: 7,
+    isBestValue: false,
+    benefits: [
+      'Aylık planın tüm avantajları',
+      'Ayda ₺6,60 tasarruf',
+    ],
+  },
+  {
+    id: 'plan_yearly',
+    name: 'Yıllık',
+    billingPeriod: 'YEARLY',
+    priceKurus: 39990,
+    monthlyEquivalentKurus: 3333,
+    currency: 'TRY',
+    trialDays: 7,
+    isBestValue: true,
+    benefits: [
+      'Aylık planın tüm avantajları',
+      'Yılda ₺198,90 tasarruf',
+      'Erken içerik önizlemeleri',
+    ],
+  },
+];
+
+export const mockPlansResponse: PlansResponse = { plans: mockPlans };
+
+/** Kredi paketleri (kurgusal fiyatlar). */
+export const mockCreditPacks: CreditPack[] = [
+  {
+    id: 'pack_60',
+    credits: 60,
+    priceKurus: 2990,
+    currency: 'TRY',
+    isBestValue: false,
+    bonusCredits: 0,
+  },
+  {
+    id: 'pack_200',
+    credits: 200,
+    priceKurus: 8990,
+    currency: 'TRY',
+    isBestValue: true,
+    bonusCredits: 20,
+  },
+  {
+    id: 'pack_600',
+    credits: 600,
+    priceKurus: 23990,
+    currency: 'TRY',
+    isBestValue: false,
+    bonusCredits: 90,
+  },
+];
+
+export const mockCreditPacksResponse: CreditPacksResponse = {
+  packs: mockCreditPacks,
+};
+
+/** Cüzdan (dev mock oturumu). */
+export const mockWallet: Wallet = {
+  userId: mockProfile.id,
+  creditBalance: 260,
+  purchasedCredits: 220,
+  grantedCredits: 40,
+  subscriptionStatus: 'TRIALING',
+  subscriptionRenewsAt: '2026-11-01T00:00:00.000Z',
+};
+
+export const mockWalletResponse: WalletResponse = { wallet: mockWallet };
+
+export const mockWalletTransactions: WalletTransaction[] = [
+  {
+    id: 'tx_004',
+    kind: 'GRANT',
+    amount: 40,
+    balanceAfter: 260,
+    createdAt: '2026-10-20T09:00:00.000Z',
+    label: 'Hoş geldin hediyesi',
+  },
+  {
+    id: 'tx_003',
+    kind: 'CREDIT_PURCHASE',
+    amount: 200,
+    balanceAfter: 220,
+    createdAt: '2026-10-18T21:30:00.000Z',
+    label: '200 kredi paketi',
+  },
+  {
+    id: 'tx_002',
+    kind: 'EPISODE_UNLOCK',
+    amount: -80,
+    balanceAfter: 20,
+    createdAt: '2026-10-17T22:10:00.000Z',
+    label: 'Beyaz Gürültü Kulübü — 3. Bölüm',
+  },
+  {
+    id: 'tx_001',
+    kind: 'EPISODE_UNLOCK',
+    amount: -60,
+    balanceAfter: 80,
+    createdAt: '2026-10-16T20:45:00.000Z',
+    label: 'Beyaz Gürültü Kulübü — 2. Bölüm',
+  },
+];
+
+export const mockWalletTransactionsResponse: WalletTransactionsResponse = {
+  items: mockWalletTransactions,
+};
+
+/** Mock kullanıcılar — parolalar düz tutulur (yalnızca geliştirme; gerçek
+ * kimlik doğrulama argon2id ile sunucuda yapılır, bkz. docs/SECURITY.md). */
+export interface MockUserRecord {
+  id: string;
+  displayName: string;
+  email: string;
+  password: string;
+  joinedAt: string;
+}
+
+export const mockUsers: MockUserRecord[] = [
+  {
+    id: 'u_dev_001',
+    displayName: 'Deniz Aksoy',
+    email: 'deniz@ornek.com',
+    password: 'perdego',
+    joinedAt: '2025-03-14T10:00:00.000Z',
+  },
+];
+
+/** Cüzdan geçici durum — mock adapter satın alma akışlarında günceller. */
+export const mockWalletState: Wallet = { ...mockWallet };
+export const mockTransactionLog: WalletTransaction[] = [...mockWalletTransactions];
+
+export function findMockUserByCredentials(
+  email: string,
+  password: string
+): MockUserRecord | undefined {
+  const normalized = email.trim().toLowerCase();
+  return mockUsers.find(
+    (user) => user.email === normalized && user.password === password
+  );
+}
+
+export function createMockSession(user: MockUserRecord): AuthSession {
+  return {
+    user: {
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      joinedAt: user.joinedAt,
+    },
+    sessionToken: `mock-session-${user.id}-${Date.now()}`,
+  };
 }

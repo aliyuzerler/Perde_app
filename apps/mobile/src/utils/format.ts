@@ -34,3 +34,13 @@ export function formatMonthYear(isoDate: string, locale = 'tr-TR'): string {
 export function formatNames(names: readonly string[], max = 3): string {
   return names.slice(0, max).join(', ');
 }
+
+/** Kuruş cinsinden fiyatı "₺49,90" biçimine çevirir. */
+export function formatKurus(kurus: number): string {
+  if (!Number.isFinite(kurus) || kurus < 0) {
+    return '₺0,00';
+  }
+  const lira = Math.floor(kurus / 100);
+  const cents = String(kurus % 100).padStart(2, '0');
+  return `₺${lira},${cents}`;
+}

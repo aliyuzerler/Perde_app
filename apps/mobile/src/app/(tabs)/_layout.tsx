@@ -1,5 +1,5 @@
 /**
- * Sekme gezinmesi: Keşfet / Ara / Planım / Profil.
+ * Sekme gezinmesi: Ana Sayfa / Keşfet / Ara / Planım / Profil.
  * Koyu sinematik taban çubuğu; aktif renk marka kırmızısı.
  */
 import { StyleSheet } from 'react-native';
@@ -29,6 +29,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          title: t('tabs.home'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color as unknown as string} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
           title: t('tabs.discover'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="compass-outline" size={size} color={color as unknown as string} />
@@ -45,7 +54,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="watchlist"
+        name="library"
         options={{
           title: t('tabs.watchlist'),
           tabBarIcon: ({ color, size }) => (

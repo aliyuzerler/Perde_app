@@ -1,9 +1,9 @@
 /**
- * Kök yerleşim: sağlayıcı zinciri ve Stack tanımı.
+ * Kök yerleşim: sağlayıcı zinciri, Stack tanımı ve açılış (onboarding) kapısı.
  * Ekranlar burada iş mantığı içermez; veri katmanına yalnızca hook'larla erişir.
  */
 import { useEffect, type ReactNode } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,11 +35,20 @@ function Providers({ children }: { children: ReactNode }) {
 
 function RootNavigator() {
   const { theme } = useTheme();
+  const hasSeenOnboarding = usePreferencesStore(
+    (state) => state.hasSeenOnboarding
+  );
+
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {
       /* yoksay */
     });
   }, []);
+
+  // Açılış kapısı: ilk başlatmada onboarding, sonrasında ana akış.
+  if (!hasSeenOnboarding) {
+    return <Redirect href="/onboarding" />;
+  }
 
   return (
     <>
@@ -52,6 +61,24 @@ function RootNavigator() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="content/[id]" />
+        <Stack.Screen
+          name="player/[episodeId]"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="paywall"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="credits"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen name="category/[slug]" />
+        <Stack.Screen name="auth/login" />
+        <Stack.Screen name="auth/register" />
         <Stack.Screen name="+not-found" />
       </Stack>
     </>

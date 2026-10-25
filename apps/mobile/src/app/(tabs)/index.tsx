@@ -1,217 +1,273 @@
 /**
- * Keşfet: hero + yatay raylar.
- * Veri katmanına yalnızca `useFeed` hook'u ile erişilir (Kural 5).
+ * Ana Sayfa — sinematik öne çıkan alan, izlemeye devam, trend/popup raylar,
+ * yeni eklenenler ve kategori şeridi. Veri: useFeed (mock adapter) + yerel
+ * playback-store (gerçek izleme ilerlemesi).
  */
-import { useCallback, useMemo } from 'react';
-import { FlatList, StyleSheet, View, type ListRenderItemInfo } from 'react-native';
+import { useMemo } from 'react';
+import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { useFeed } from '@/hooks/queries/use-feed';
+import { useContentDetail } from '@/hooks/queries/use-content-detail';
 import { ScreenContainer } from '@/components/screen-container';
-import { PosterCard } from '@/components/ui/poster-card';
-import { SectionHeader } from '@/components/ui/section-header';
-import { GradientPlaceholder } from '@/components/ui/gradient-placeholder';
+import { AppText } from '@/components/ui/app-text';
 import { LoadingView } from '@/components/state-views/loading-view';
-import { EmptyView } from '@/components/state-views/empty-view';
 import { ErrorView } from '@/components/state-views/error-view';
-import { ApiClientError } from '@/services/api-client';
-import { layout, radius, spacing } from '@/theme/tokens';
-import type {
-  ContentSummary,
-  FeedSection,
-  FeedSectionLayout,
-} from '@perdego/contracts';
+import { EmptyView } from '@/components/state-views/empty-view';
+import { HeroBanner } from '@/components/home/hero-banner';
+import { ContentRail } from '@/components/home/content-rail';
+import { ContinueCard } from '@/components/home/continue-card';
+import { usePlaybackStore } from '@/store/playback-store';
+import { useAuthStore } from '@/store/auth-store';
+import { radius, spacing } from '@/theme/tokens';
+import type { ContentSummary } from '@perdego/contracts';
 
-function buildCardMeta(item: ContentSummary, genreLabel: (slug: string) => string): string {
-  const genre = item.genres[0] ? genreLabel(item.genres[0]) : null;
-  return [String(item.releaseYear), genre].filter(Boolean).join(' • ');
-}
-
-function cardAspect(item: ContentSummary) {
-  return item.kind === 'SHORT_FILM' ? ('vertical' as const) : ('poster' as const);
-}
-
-function cardWidth(item: ContentSummary) {
-  return item.kind === 'SHORT_FILM' ? layout.railVerticalWidth : layout.railPosterWidth;
-}
-
-export default function DiscoverScreen() {
+export default function HomeScreen() {
   const { theme } = useTheme();
   const t = useT();
   const styles = getStyles(theme.colors);
   const feed = useFeed();
 
-  const openContent = useCallback((contentId: string) => {
-    router.push({ pathname: '/content/[id]', params: { id: contentId } });
-  }, []);
+  const continueEntries = usePlaybackStore((state) => state.continueWatching)();
+  const session = useAuthStore((state) => state.session);
 
-  const genreLabel = useCallback(
-    (slug: string) => slug.replace(/-/g, ' '),
+  // Kategori şeridi — sabit tür seti (Faz 2b'de sunucudan gelecek).
+  const categories = useMemo(
+    () => [
+      { slug: 'dram', name: 'Dram' },
+      { slug: 'gizem', name: 'Gizem' },
+      { slug: 'gerilim', name: 'Gerilim' },
+      { slug: 'bilim-kurgu', name: 'Bilim Kurgu' },
+      { slug: 'komedi', name: 'Komedi' },
+    ],
     []
   );
 
-  const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<FeedSection>) => {
-      if (item.layout === ('GRID' satisfies FeedSectionLayout)) {
-        return (
-          <View>
-            <SectionHeader title={item.title} />
-            <View style={styles.grid}>
-              {item.items.map((card) => (
-                <PosterCard
-                  key={card.contentId}
-                  title={card.title}
-                  metaText={buildCardMeta(card, genreLabel)}
-                  aspect="poster"
-                  imageUrl={card.posterUrl ?? null}
-                  accessType={card.accessType}
-                  isNew={card.isNew}
-                  style={styles.gridItem}
-                  onPress={() => openContent(card.contentId)}
+  const openDetail = (item: ContentSummary) =>
+    router.push({ pathname: '/content/[id]', params: { id: item.contentId } });
+
+  const sections = feed.data?.sections ?? [];
+  const heroSection = sections.find((section) => section.layout === 'HERO');
+  const heroItem = heroSection?.items[0];
+  const heroDetail = useContentDetail(heroItem ? heroItem.contentId : '');
+  const heroContent = heroDetail.data;
+  const rails = sections.filter((section) => section.layout !== 'HERO');
+  const verticalRail = rails.find(
+    (section) => section.id === 'rail_verticals' || section.id === 'rail_shorts'
+  );
+
+  if (feed.isPending) {
+    return (
+      <ScreenContainer>
+        <LoadingView variant="rails" />
+      </ScreenContainer>
+    );
+  }
+
+  if (feed.isError || !heroItem) {
+    return (
+      <ScreenContainer>
+        <ErrorView
+          kind={feed.error instanceof Error && feed.error.message === 'MOCK_NETWORK_FAILURE' ? 'network' : 'generic'}
+          title={t('discover.errorTitle')}
+          body={t('discover.errorBody')}
+          onRetry={() => feed.refetch()}
+          style={styles.centered}
+        />
+      </ScreenContainer>
+    );
+  }
+
+  return (
+    <ScreenContainer>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandBar} />
+            <AppText variant="heading" style={styles.brandName}>
+              {t('common.appName')}
+            </AppText>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('credits.title')}
+            onPress={() => router.push('/credits')}
+            style={styles.walletButton}
+          >
+            <Ionicons name="wallet-outline" size={20} color={theme.colors.text} />
+          </Pressable>
+        </View>
+
+        <HeroBanner
+          item={heroItem}
+          tagline={heroContent?.tagline}
+          episodeCount={
+            heroContent && heroContent.kind === 'SERIES'
+              ? heroContent.seasons.reduce((sum, season) => sum + season.episodes.length, 0)
+              : undefined
+          }
+          seasonCount={heroContent?.seasons.length || undefined}
+          onPlay={() => router.push({ pathname: '/content/[id]', params: { id: heroItem.contentId } })}
+          onDetail={() =>
+            router.push({ pathname: '/content/[id]', params: { id: heroItem.contentId } })
+          }
+        />
+
+        {session ? (
+          <AppText variant="caption" color="textSubtle" style={styles.welcome}>
+            {t('auth.welcome', { name: session.user.displayName })}
+          </AppText>
+        ) : null}
+
+        {continueEntries.length > 0 ? (
+          <View style={styles.railBlock}>
+            <AppText variant="heading" style={styles.railTitle}>
+              {t('home.continueWatching')}
+            </AppText>
+            <View style={styles.continueRow}>
+              {continueEntries.slice(0, 6).map((entry) => (
+                <ContinueCard
+                  key={entry.episodeId}
+                  entry={entry}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/player/[episodeId]',
+                      params: {
+                        episodeId: entry.episodeId,
+                        contentId: entry.contentId,
+                      },
+                    })
+                  }
                 />
               ))}
             </View>
           </View>
-        );
-      }
+        ) : null}
 
-      return (
-        <View>
-          <SectionHeader title={item.title} />
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={item.items}
-            keyExtractor={(card) => card.contentId}
-            contentContainerStyle={styles.railContent}
-            renderItem={({ item: card }) => (
-              <PosterCard
-                title={card.title}
-                metaText={buildCardMeta(card, genreLabel)}
-                aspect={cardAspect(card)}
-                imageUrl={card.posterUrl ?? card.verticalPreviewUrl ?? null}
-                accessType={card.accessType}
-                isNew={card.isNew}
-                width={cardWidth(card)}
-                onPress={() => openContent(card.contentId)}
-              />
-            )}
-          />
+        {rails.map((section) => (
+          <View key={section.id} style={styles.railBlock}>
+            <ContentRail
+              title={section.title}
+              items={section.items}
+              vertical={section.id === verticalRail?.id}
+              itemWidth={section.id === verticalRail?.id ? 156 : 120}
+              onItemPress={openDetail}
+              metaFor={(item) =>
+                item.isNew ? t('content.newBadge') : String(item.releaseYear)
+              }
+            />
+          </View>
+        ))}
+
+        <View style={styles.railBlock}>
+          <AppText variant="heading" style={styles.railTitle}>
+            {t('home.byCategory')}
+          </AppText>
+          <View style={styles.categoryRow}>
+            {categories.map((category) => (
+              <Pressable
+                key={category.slug}
+                accessibilityRole="button"
+                onPress={() =>
+                  router.push({
+                    pathname: '/category/[slug]',
+                    params: { slug: category.slug },
+                  })
+                }
+                style={[
+                  styles.categoryCard,
+                  { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+                ]}
+              >
+                <AppText variant="heading" numberOfLines={1}>
+                  {category.name}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
         </View>
-      );
-    },
-    [genreLabel, openContent, styles.grid, styles.gridItem, styles.railContent]
-  );
 
-  const body = useMemo(() => {
-    if (feed.isPending) {
-      return <LoadingView variant="rails" />;
-    }
-    if (feed.isError) {
-      const isNetwork =
-        feed.error instanceof ApiClientError && feed.error.isNetworkFailure;
-      return (
-        <ErrorView
-          kind={isNetwork ? 'network' : 'generic'}
-          title={t('discover.errorTitle')}
-          body={t('discover.errorBody')}
-          onRetry={() => feed.refetch()}
-          style={styles.centeredBody}
-        />
-      );
-    }
-    const sections = feed.data?.sections ?? [];
-    if (sections.length === 0) {
-      return (
-        <EmptyView
-          title={t('empty.genericTitle')}
-          icon="film-outline"
-          onCtaPress={() => feed.refetch()}
-          ctaLabel={t('common.retry')}
-          style={styles.centeredBody}
-        />
-      );
-    }
-    return null;
-  }, [feed, t, styles.centeredBody]);
-
-  const hero = feed.data?.sections.find((section) => section.layout === 'HERO');
-  const heroItem = hero?.items[0];
-  const railSections = useMemo(
-    () => feed.data?.sections.filter((section) => section.layout !== 'HERO') ?? [],
-    [feed.data]
-  );
-
-  return (
-    <ScreenContainer>
-      {body ?? (
-        <FlatList
-          data={railSections}
-          keyExtractor={(section) => section.id}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            heroItem ? (
-              <View style={styles.heroWrap}>
-                <PosterCard
-                  title={heroItem.title}
-                  metaText={buildCardMeta(heroItem, genreLabel)}
-                  aspect="wide"
-                  imageUrl={heroItem.posterUrl ?? heroItem.verticalPreviewUrl ?? null}
-                  accessType={heroItem.accessType}
-                  isNew={heroItem.isNew}
-                  style={styles.heroCard}
-                  onPress={() => openContent(heroItem.contentId)}
-                />
-              </View>
-            ) : (
-              <View style={styles.heroFallback}>
-                <GradientPlaceholder
-                  seed="perdego-hero"
-                  title={t('common.appName')}
-                  style={styles.heroCard}
-                />
-              </View>
-            )
-          }
-          ListFooterComponent={<View style={styles.footerSpace} />}
-        />
-      )}
+        {sections.length === 0 && rails.length === 0 ? (
+          <EmptyView
+            title={t('empty.genericTitle')}
+            body={t('discover.errorBody')}
+          />
+        ) : null}
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
-const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>  StyleSheet.create({
-    heroWrap: {
-      paddingHorizontal: spacing[4],
-      paddingTop: spacing[3],
-    },
-    heroFallback: {
-      paddingHorizontal: spacing[4],
-      paddingTop: spacing[3],
-    },
-    heroCard: {
-      borderRadius: radius.md,
-    },
-    railContent: {
-      paddingHorizontal: spacing[4],
-      gap: spacing[3],
-    },
-    grid: {
-      paddingHorizontal: spacing[4],
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing[3],
-    },
-    gridItem: {
-      width: '47.5%',
-    },
-    centeredBody: {
+const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
+  StyleSheet.create({
+    centered: {
       flex: 1,
       justifyContent: 'center',
     },
-    footerSpace: {
-      height: spacing[6],
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: spacing[2],
+      paddingBottom: spacing[3],
+      paddingHorizontal: spacing[4],
+    },
+    brandRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+    },
+    brandBar: {
+      width: 4,
+      height: 20,
+      backgroundColor: colors.accent,
+      borderRadius: radius.none,
+    },
+    brandName: {
+      letterSpacing: 0.5,
+    },
+    walletButton: {
+      minHeight: 44,
+      minWidth: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    welcome: {
+      paddingHorizontal: spacing[4],
+      marginTop: spacing[3],
+    },
+    railBlock: {
+      marginTop: spacing[4],
+    },
+    railTitle: {
+      paddingHorizontal: spacing[4],
+      marginBottom: spacing[3],
+    },
+    continueRow: {
+      flexDirection: 'row',
+      paddingHorizontal: spacing[4],
+      gap: spacing[3],
+      flexWrap: 'wrap',
+    },
+    categoryRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing[2],
+      paddingHorizontal: spacing[4],
+    },
+    categoryCard: {
+      flexGrow: 0,
+      flexBasis: '31%',
+      minHeight: 64,
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: spacing[3],
+      justifyContent: 'center',
     },
   });

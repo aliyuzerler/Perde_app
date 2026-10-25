@@ -253,3 +253,22 @@ Stage Summary:
 - Karar: PASS — katalog deneyimi gerçek backend verisiyle uçtan uca çalışıyor; içerik keşif sistemi admin banner/bölüm yönetimiyle büyütülebilir durumda.
 - Kritik ders: canlı doğrulamadan önce dist'i yeniden derle; doküman-kod uyuşmazlığı (localStorage iddiası) ancak canlı koşumda yakalanır.
 - Sonraki ajan için: Faz 5 (mağaza/ödeme uçları), Faz 6 (admin paneli UI'sı — yönetim uçları hazır), F2C-03 rozet kırpma cilası, native cihaz doğrulaması. Probe yeniden koşumu: API'yi restart et (rate limit) + dist güncel olsun.
+
+---
+Task ID: 13
+Agent: Ana ajan (Z.ai)
+Task: FAZ 5 Testi (Katalog ve Arama) — gerçek backend verisiyle katalog deneyiminin kabul doğrulaması (Faz 2c geliştirmesi)
+
+Work Log:
+- Doğrulanan faz: Faz 2c (commit 433920e). Ortam sıfırdan kurtarıldı: gömülü PG 17.4 yeniden kuruldu (scripts/qa-pg package.json + setup), corepack pnpm 12.15, deps + prisma client, apps/api/.env, kök .env Postgres URL'si geri yüklendi.
+- Gerçek komutlar: typecheck 4/4, lint 4/4, build (api+admin) yeşil; testler 286/286 (contracts 48 + api 124 [29 gerçek-PG entegrasyon] + mobile 114); migrate deploy 4 migration + idempotent seed.
+- Canlı probe: P2C 41/41 + YENİ ek probe (scripts/qa-faz5-extra-probe.mjs) 16/16 + faz3b auth regresyon 22/22 + faz2b smoke 13/13; UI E2E gerçek API (Expo web, EXPO_PUBLIC_MOCK_API=0, Playwright) 20/20, mockApi=0, 20 ekran görüntüsü yenilendi.
+- Yeni kapsam: tam sayfalama yürüyüşleri (titles/search/kategori/geçmiş: mükerrer 0, yürünen=total), A/B iki-kullanıcı izolasyonu (listeler + tek-kayıt sıfır-durum), normal-kullanıcı token'ıyla TASLAK/ARŞİV sızma denetimi (detay/arama/liste/home), API detayının PostgreSQL ile çapraz doğrulaması.
+- Bulunan kusurlar: ÜRÜN HATASI YOK. 5 probe düzeltmesi (arama param 'query' değil 'q'; çift pageSize→qs dizisi→NaN→400; walk'a token; contentSummary'de 'id' değil 'contentId'; DB SQL camelCase kolonlar) + 2 ortam dersi (sandbox arka plan süreçlerini temizliyor → tek-çağrı koşum betikleri; auth probe'a MAIL_OUTBOX_FILE env gerekli). P2C-08 kesişim + entegrasyon boş-katalog senaryosu regresyonla yeşil.
+- Mock vs gerçek API tespiti: adapter.ts kapısı (yalnız __DEV__ && EXPO_PUBLIC_MOCK_API==='1') + çalışma anı kanıtı (results.json mockApi:0, seed adları ekranda, API kapatılınca hata ekranı) → katalog GERÇEK API'den.
+- Sözleşme notları rapora işlendi: watch-progress tek-kayıt ucu kayıt yokken 200+sıfır durum (sızma yok, F5-06d kanıtı); watchlist tam liste (meta yok); arşiv favorilerden sessiz düşer.
+- Rapor: docs/qa/FAZ-5-QA.md (PASS WITH WARNINGS). Yeni dosyalar: scripts/qa-faz5-{extra-probe.mjs,run-probes.sh,ui-e2e.sh} + çıktı kayıtları; ürün koduna dokunulmadı.
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriteri (katalog + kişisel listeler doğru veriyle, yetkisiz içerik erişimi olmadan) canlı kanıtla sağlandı; uyarılar dış bağımlılıklar (gerçek cihaz, Mailpit SMTP, üretim ortamı) + kalıtsal F2C-03 rozet kırpma cilası.
+- Sonraki ajan için: Faz 5/6 geliştirmesine geçilebilir (mağaza-ödeme uçları ya da admin paneli UI'sı). Canlı probe yeniden koşumu: bash scripts/qa-faz5-run-probes.sh (API restart'larını kendisi yapar; rate limiter bellek içi). UI E2E: bash scripts/qa-faz5-ui-e2e.sh. PG: bash scripts/qa-pg/setup-pg.sh. Prisma/API komutlarında DATABASE_URL'i AÇIK ver (süreç env'i file:...custom.db ezmesi sürüyor).

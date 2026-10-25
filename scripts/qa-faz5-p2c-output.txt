@@ -1,0 +1,45 @@
+Canlı katalog probe → http://localhost:3000/api/v1
+
+PASS · P2C-01 health + health/db 200
+PASS · P2C-02 /home 200 + zarf
+PASS · P2C-03 /home banner > 0 — 2 banner
+PASS · P2C-04 /home bölüm > 0 — 4 bölüm
+PASS · P2C-05 /home HERO/RAIL/GRID düzenleri — HERO,RAIL,GRID
+PASS · P2C-06 kart alanları: kind+accessType+posterUrl — SERIES/SUBSCRIPTION
+PASS · P2C-07 titles sayfalama meta — total=6 pages=2
+PASS · P2C-08 sayfa 1 ve 2 kesişmez
+PASS · P2C-09 kind filtresi yalnız SERIES — 3 dizi
+PASS · P2C-10 accessType filtresi yalnız FREE — 2 ücretsiz
+PASS · P2C-11 category filtresi çalışır — 3 dram yapımı
+PASS · P2C-12 sort parametresi kabul edilir
+PASS · P2C-13 arama meta ile döner — 2 sonuç
+PASS · P2C-14 sonuç yok → boş sayfa (hata değil)
+PASS · P2C-15 boş terim → 400 VALIDATION_FAILED
+PASS · P2C-16 arama kind filtresi
+PASS · P2C-17 detay 200 + sezonlar — 1 sezon
+PASS · P2C-18 bölüm satırı: no+duration+access — S1B1 access=?
+PASS · P2C-19 bölüm detayı 200 + karar
+PASS · P2C-20 bilinmeyen slug → 404 CONTENT_NOT_FOUND
+PASS · P2C-21 kategori listesi > 0 — 5 kategori
+PASS · P2C-22 kategori içeriği sayfalı — aksiyon: 1 yapım
+PASS · P2C-23 kimliksiz watchlist → 401
+PASS · P2C-24 favori ekle (idempotent) + listede
+PASS · P2C-25 favoriden çıkar + listeden düşer
+PASS · P2C-26 izleme: continue + history ayrı uçlar — continue=1 history=1
+PASS · P2C-27 history sayfalama meta
+PASS · P2C-28 continue satırı: episode+content+pozisyon — Son Vardiya S1B1 @210s
+PASS · P2C-29 viewer admin ucu → 403 — code=FORBIDDEN reason=ADMIN_ONLY
+PASS · P2C-30 taslak oluştur 201
+PASS · P2C-31 taslak herkese açık uçta 404
+PASS · P2C-32 PROCESSING geçişi + hâlâ gizli
+PASS · P2C-33 PUBLISHED → herkese açık uçta görünür
+PASS · P2C-34 admin listesi tüm durumları görür
+PASS · P2C-35 ARCHIVED → herkese açık uçlardan kaybolur
+PASS · P2C-36 banner oluştur → /home’da görünür
+PASS · P2C-37 banner pasife → /home’da gizlenir
+PASS · P2C-38 banner silinir
+PASS · P2C-39 bölüm oluştur + item ekle → /home’da RAIL görünür
+PASS · P2C-40 bölüm silinir → /home’dan kalkar
+PASS · P2C-41 kredi bölümü kimliksiz → canPlay=false + NEEDS_CREDITS — sessiz-sehir: reason=NEEDS_CREDITS
+
+Sonuç: 41 PASS / 0 FAIL / 41 toplam

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-25 19:56:23",
+  "generatedAt": "2026-10-25 20:40:41",
   "base": "http://localhost:8081",
   "api": "http://localhost:3000",
   "mockApi": "0 (gerçek adapter)",

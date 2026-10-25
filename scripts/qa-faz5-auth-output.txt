@@ -1,0 +1,24 @@
+PASS · register 201 + emailVerified:false
+PASS · doğrulanmamış giriş 403 EMAIL_NOT_VERIFIED
+PASS · verify-email 201
+PASS · giriş 201 + token çifti
+PASS · tekrar kayıt 409 EMAIL_ALREADY_EXISTS
+PASS · hatalı parola 401
+PASS · refresh rotasyon 201
+PASS · GET /me maskeli e-posta
+PASS · PATCH /me günceller
+PASS · sessions listesi current=true
+PASS · refresh reuse 401 REFRESH_REUSED
+PASS · avatar upload 201 + url
+PASS · avatar statik yayın 200
+PASS · legal terms 200 Türkçe
+PASS · forgot+reset 201
+PASS · yeni parola ile giriş 201
+PASS · reset sonrası eski oturum 401
+PASS · hesap silme talebi 201 + purgeAt
+PASS · silme sonrası giriş 401
+PASS · restore 201 + oturum
+PASS · rate limit 429 RATE_LIMITED
+PASS · Swagger yeni uçları içeriyor — 64 yol
+
+22/22 probe geçti

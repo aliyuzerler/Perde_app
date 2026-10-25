@@ -209,3 +209,24 @@ Stage Summary:
 - Karar: PASS — 10 teknik kuralın tamamı uygulandı ve test edildi; bilinçli sınırlar (access TTL iptal gecikmesi, tek örnekli rate limit, yerel disk avatar, purge cron'u, avatar picker UI) SECURITY §11.2 ve raporda belgelendi.
 - Değişen dosyalar: 2 migration, contracts (2), api (25+), mobile (25+), docs (6), scripts/qa-faz3b-auth-probe.mjs (yeni), .env.example ×2, package.json ×2.
 - Sonraki ajan için: mobil gerçek adapter geçişi (EXPO_PUBLIC_MOCK_API=0) katalog uçlarıyla test edilmeli; avatar picker UI bağlanmalı; purge cron'u Faz 6; Mailpit'e geçiş SMTP_HOST=localhost:1025.
+
+---
+Task ID: 11
+Agent: Ana ajan (Z.ai)
+Task: FAZ 4 Testi (Kimlik Doğrulama) — mobil-backend auth akışının uçtan uca kalite kontrolü
+
+Work Log:
+- Son geliştirme fazı doğrulandı: Faz 3b (commit afc593f). Gerçek komutlar package.json'lardan bulundu ve koşuldu.
+- Statik: typecheck+lint 4 workspace 0 hata/0 uyarı; build nest+admin+expo(ios+android) yeşil; migration 4/4 güncel.
+- Testler: 248/248 (contracts 48 + api 109 [16 entegrasyon gerçek PG] + mobile 91) — ek sırada kök koşumla teyit.
+- Canlı probe (yeni betik scripts/qa-faz4-auth-probe.mjs, 3 fazlı): fonksiyonel 21/21 (kayıt→verify→login→profil→avatar→oturumlar→rotation/reuse→parola akışları→silme/restore→legal→DB hash denetimi→Swagger), ratelimit 3/3 (login/register/forgot 429 + retryAfter, varsayılan limitler), expiry 3/3 (TTL=60 koşumunda TOKEN_EXPIRED + refresh yenileme).
+- Güvenlik kanıtları: 16 sır × 3 API logu → 0 sızıntı; DB'de refresh token yalnızca SHA-256 hash, ipHash hash/NULL; logout sonrası refresh anında 401, access TTL'e dek geçerli (SECURITY §11.2 belgeli ödün — canlı ölçüldü).
+- Bulgular: Kritik/Yüksek yok. F4-01 Orta: mobil SecureStore birim testi YOKTU → 4 test eklendi (Keychain flag, web düşüşü, temizlik; mobile 91/91). F4-02..04 Düşük: probe betiği hataları (Swagger öneki varsayımı, 429 kod adı, TLD sonrası e-posta soneki) — hepsi probe tarafında, ürün etkisi yok, düzeltildi. F4-05 Düşük: misafirin korumalı ekrana derin bağlant girişinde ekran-özel kapı yok (sunucu 401 + hata durumu; rota kapısı expo-router v58 kısıtıyla sonraki geliştirme fazına bırakıldı).
+- Regresyon: faz2b entegrasyon 18/18, faz3b probe 22/22, ekran/state davranışı değişmedi; ürün dosyasına dokunulmadı (git: 2 yeni QA dosyası).
+- Dürüst sınırlar: Mailpit SMTP doğrulanamadı (dev outbox kullanıldı; SMTP_HOST=localhost:1025 makinede test edilmeli), gerçek cihaz/emülatör yok, purge cron Faz 6.
+- Rapor: docs/qa/FAZ-4-QA.md
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — giriş ve oturum yönetimi uçtan uca kanıtlandı; yetkisiz erişim engelli; hassas veriler korunuyor. Uyarılar dış bağımlılıklar + dokümante ödünler + F4-05 cilası.
+- Değişen dosyalar: apps/mobile/src/services/__tests__/secure-storage.test.ts (yeni, +4 test), scripts/qa-faz4-auth-probe.mjs (yeni), docs/qa/FAZ-4-QA.md (yeni).
+- Sonraki ajan için: Mailpit SMTP + gerçek cihaz doğrulaması Faz 5 öncesi; F4-05 rota kapısı (expo-router v58 Redirect döngüsü kuralına dikkat); probe yeniden koşumu için betik başlığındaki env tablosu esas alınmalı.

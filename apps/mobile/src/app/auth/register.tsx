@@ -1,7 +1,10 @@
 /**
- * Kayıt ekranı (Faz 3 — mock). Doğrulama loginRequest/registerRequest
- * sözleşmelerinin kurallarıyla aynıdır; mock adapter yeni kullanıcı oturumu
- * açar. Gerçek kimlik akışı Faz 3 sunucu fazında gelir.
+ * Kayıt ekranı (Faz 3b: gerçek akış).
+ *
+ * - Şifre politikası sunucu sözleşmesiyle aynı (8+ karakter, harf + rakam).
+ * - Kullanım koşulları + gizlilik metinlerine ekran içi erişim (kural).
+ * - Kayıt başarısı oturum açar ve e-posta doğrulama bildirim ekranına gider
+ *   (giriş, doğrulama öncesi sunucuda engellidir).
  */
 import { useState } from 'react';
 import { StyleSheet, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
@@ -14,6 +17,7 @@ import { AppText } from '@/components/ui/app-text';
 import { AppButton } from '@/components/ui/app-button';
 import { AuthField } from '@/components/ui/auth-field';
 import { useAuthStore } from '@/store/auth-store';
+import { useDescribeApiError, PASSWORD_POLICY_RE } from '@/utils/api-error';
 import { spacing } from '@/theme/tokens';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -21,6 +25,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function RegisterScreen() {
   const { theme } = useTheme();
   const t = useT();
+  const describeError = useDescribeApiError();
   const styles = getStyles(theme.colors);
   const setSession = useAuthStore((state) => state.setSession);
 
@@ -41,8 +46,9 @@ export default function RegisterScreen() {
     const nextErrors: typeof errors = {};
     if (displayName.trim().length < 2) nextErrors.displayName = t('auth.shortName');
     if (!EMAIL_RE.test(email.trim())) nextErrors.email = t('auth.invalidEmail');
-    if (password.length < 6) nextErrors.password = t('auth.shortPassword');
-    if (!acceptTerms) nextErrors.terms = t('auth.termsRequired');
+    if (password.length < 8) nextErrors.password = t('auth.passwordPolicy');
+    else if (!PASSWORD_POLICY_RE.test(password)) nextErrors.password = t('auth.passwordPolicy');
+    if (!acceptTerms) nextErrors.terms = t('auth.acceptTermsRequired');
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -55,9 +61,12 @@ export default function RegisterScreen() {
         acceptTerms: true,
       });
       setSession(session);
-      router.replace('/');
-    } catch {
-      setErrors({ form: t('auth.registerConflict') });
+      router.replace({
+        pathname: '/auth/verify-email-notice',
+        params: { email: session.user.email },
+      });
+    } catch (error) {
+      setErrors({ form: describeError(error) });
     } finally {
       setSubmitting(false);
     }
@@ -93,7 +102,9 @@ export default function RegisterScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            secureToggle
             error={errors.password}
+            placeholder={t('auth.passwordPolicy')}
           />
 
           <Pressable
@@ -121,8 +132,27 @@ export default function RegisterScreen() {
             </AppText>
           ) : null}
 
-          {errors.form ? (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push('/legal/terms')}
+            style={styles.linkButton}
+          >
             <AppText variant="caption" style={{ color: theme.colors.accent }}>
+              {t('auth.legalTerms')} →
+            </AppText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push('/legal/privacy')}
+            style={styles.linkButton}
+          >
+            <AppText variant="caption" style={{ color: theme.colors.accent }}>
+              {t('auth.legalPrivacy')} →
+            </AppText>
+          </Pressable>
+
+          {errors.form ? (
+            <AppText variant="caption" style={{ color: theme.colors.accent }} accessibilityLiveRegion="polite">
               {errors.form}
             </AppText>
           ) : null}
@@ -187,17 +217,16 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
     termsText: {
       flex: 1,
     },
+    linkButton: {
+      minHeight: 32,
+      justifyContent: 'center',
+    },
     links: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing[2],
       marginTop: spacing[2],
-    },
-    linkButton: {
-      minHeight: 44,
-      justifyContent: 'center',
-      paddingHorizontal: spacing[1],
     },
     notice: {
       textAlign: 'center',

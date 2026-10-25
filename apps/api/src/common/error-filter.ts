@@ -144,6 +144,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     }
 
+    // Multer (avatar yükleme) boyut/biçim hataları → 400.
+    const multer = exception as { name?: string; code?: string } | undefined;
+    if (multer && multer.name === 'MulterError') {
+      return {
+        ok: false,
+        error: {
+          code: 'BAD_REQUEST',
+          message: multer.code === 'LIMIT_FILE_SIZE' ? 'errors.avatarTooLarge' : 'errors.avatarInvalid',
+          details: { reason: 'MULTER_' + (multer.code ?? 'ERROR') },
+        },
+      };
+    }
+
     return {
       ok: false,
       error: {

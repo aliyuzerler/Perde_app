@@ -1,9 +1,8 @@
 /**
  * PerdeGo API kök modülü.
  *
- * Faz 2b: tam alan modeli — 13 iş modülü (Auth, Users, Catalog, Categories,
- * Episodes, WatchProgress, Watchlist, Billing, Subscriptions, Credits, Media,
- * Notifications, Admin) + altyapı (Env, Prisma, Health).
+ * Faz 2b: tam alan modeli — 13 iş modülü + Faz 3b: Account, Legal,
+ * Mail altyapısı (Env, Prisma, Health).
  */
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';

@@ -1,14 +1,24 @@
 /**
  * Faz 3 mock adapter testleri — abonelik, kredi, hesap ve kategori akışları.
  * Mock yalnızca __DEV__'de çalışır; jest-expo ortamında __DEV__ true'dur.
+ * Faz 3b ekleri: gerçek oturum sözleşmesi (token çifti), e-posta doğrulama
+ * ve parola sıfırlama akışları mock kutu (outbox) üzerinden test edilir.
  */
 import { describe, expect, it, beforeEach } from '@jest/globals';
-import { createMockAdapter, getMockDevControls } from '../mock-adapter';
-import { mockWalletState, mockTransactionLog } from '../mock-data';
+import { createMockAdapter, getMockDevControls, resetMockAccountState } from '../mock-adapter';
+import { mockOutbox, mockTransactionLog, mockWalletState, mockUsers } from '../mock-data';
+
+const REGISTER_OK = {
+  displayName: 'Test Kullanıcı',
+  email: 'yeni-kullanici@ornek.com',
+  password: 'parola1234',
+  acceptTerms: true as const,
+};
 
 describe('Faz 3 mock adapter', () => {
   beforeEach(() => {
     getMockDevControls().failNextRequest = false;
+    resetMockAccountState();
   });
 
   it('abonelik planlarını döner ve en avantajlı plan işaretlidir', async () => {
@@ -65,33 +75,131 @@ describe('Faz 3 mock adapter', () => {
     expect(result.wallet.subscriptionRenewsAt).toBeTruthy();
   });
 
-  it('geçerli kimlik bilgisiyle oturum açar', async () => {
+  // ---------------- Faz 3b: oturum + e-posta doğrulama ----------------
+
+  it('doğrulanmış kullanıcı oturum açar: token çifti + emailVerified', async () => {
     const adapter = createMockAdapter();
     const session = await adapter.login({
       email: 'deniz@ornek.com',
-      password: 'perdego',
+      password: 'perdego1',
     });
     expect(session.user.email).toBe('deniz@ornek.com');
-    expect(session.sessionToken).toContain('mock-session');
+    expect(session.user.emailVerified).toBe(true);
+    expect(session.tokens.accessToken).toContain('mock-access');
+    expect(session.tokens.refreshToken).toContain('mock-refresh');
+    expect(session.tokens.expiresIn).toBeGreaterThan(0);
   });
 
   it('hatalı şifrede reddeder', async () => {
     const adapter = createMockAdapter();
     await expect(
-      adapter.login({ email: 'deniz@ornek.com', password: 'yanlis' })
+      adapter.login({ email: 'deniz@ornek.com', password: 'yanlis-parola' })
     ).rejects.toThrow('INVALID_CREDENTIALS');
   });
 
-  it('kayıtta çakışan e-postayı reddeder', async () => {
+  it('doğrulanmamış e-postada EMAIL_NOT_VERIFIED nedeni verir', async () => {
+    const adapter = createMockAdapter();
+    await adapter.register(REGISTER_OK);
+    await expect(
+      adapter.login({ email: REGISTER_OK.email, password: REGISTER_OK.password })
+    ).rejects.toMatchObject({ reason: 'EMAIL_NOT_VERIFIED' });
+  });
+
+  it('kayıtta çakışan e-postayı EMAIL_ALREADY_EXISTS ile reddeder', async () => {
     const adapter = createMockAdapter();
     await expect(
       adapter.register({
         displayName: 'Deniz A.',
         email: 'deniz@ornek.com',
-        password: 'perdego',
+        password: 'perdego1',
         acceptTerms: true,
       })
-    ).rejects.toThrow('EMAIL_IN_USE');
+    ).rejects.toMatchObject({ reason: 'EMAIL_ALREADY_EXISTS' });
+  });
+
+  it('kayıt doğrulama e-postası üretir; anahtar tüketilince hesap doğrulanır', async () => {
+    const adapter = createMockAdapter();
+    await adapter.register(REGISTER_OK);
+    expect(mockOutbox).toHaveLength(1);
+    expect(mockOutbox[0]!.subject).toContain('doğrulama');
+
+    await adapter.verifyEmail(mockOutbox[0]!.token);
+    const user = mockUsers.find((u) => u.email === REGISTER_OK.email);
+    expect(user?.emailVerified).toBe(true);
+
+    const session = await adapter.login({
+      email: REGISTER_OK.email,
+      password: REGISTER_OK.password,
+    });
+    expect(session.user.emailVerified).toBe(true);
+  });
+
+  it('geçersiz doğrulama anahtarı TOKEN_INVALID verir', async () => {
+    const adapter = createMockAdapter();
+    await expect(adapter.verifyEmail('olmayan-anahtar-degeri')).rejects.toMatchObject({
+      reason: 'TOKEN_INVALID',
+    });
+  });
+
+  it('parola sıfırlama akışı: e-posta → reset → yeni şifreyle giriş', async () => {
+    const adapter = createMockAdapter();
+    await adapter.forgotPassword('deniz@ornek.com');
+    expect(mockOutbox).toHaveLength(1);
+    expect(mockOutbox[0]!.subject).toContain('sıfırlama');
+
+    await adapter.resetPassword(mockOutbox[0]!.token, 'yeni-parola-42');
+    const session = await adapter.login({
+      email: 'deniz@ornek.com',
+      password: 'yeni-parola-42',
+    });
+    expect(session.user.email).toBe('deniz@ornek.com');
+  });
+
+  it('bilinmeyen e-postaya forgot-password daima olumlu döner (sayım engeli)', async () => {
+    const adapter = createMockAdapter();
+    const result = await adapter.forgotPassword('yok@ornek.com');
+    expect(result.sent).toBe(true);
+    expect(mockOutbox).toHaveLength(0);
+  });
+
+  it('şifre değiştirme mevcut şifre yanlışsa WRONG_PASSWORD verir', async () => {
+    const adapter = createMockAdapter();
+    await adapter.login({ email: 'deniz@ornek.com', password: 'perdego1' });
+    await expect(
+      adapter.changePassword('yanlis-mevcut', 'yeni-parola-42')
+    ).rejects.toMatchObject({ reason: 'WRONG_PASSWORD' });
+  });
+
+  it('oturum listesi ve tüm cihazlardan çıkış çalışır', async () => {
+    const adapter = createMockAdapter();
+    await adapter.login({ email: 'deniz@ornek.com', password: 'perdego1' });
+    const sessions = await adapter.getSessions();
+    expect(sessions.items.length).toBeGreaterThan(0);
+
+    const result = await adapter.logoutAll();
+    expect(result.revoked).toBe(sessions.items.length);
+  });
+
+  it('hesap silme talebi şifre teyidi ister ve oturumu kapatır', async () => {
+    const adapter = createMockAdapter();
+    await adapter.login({ email: 'deniz@ornek.com', password: 'perdego1' });
+
+    await expect(
+      adapter.requestAccountDeletion('yanlis-sifre')
+    ).rejects.toMatchObject({ reason: 'WRONG_PASSWORD' });
+
+    const result = await adapter.requestAccountDeletion('perdego1');
+    expect(result.purgeAt).toBeTruthy();
+    const sessions = await adapter.getSessions();
+    expect(sessions.items).toHaveLength(0);
+  });
+
+  it('yasal metinler sürüm bilgisiyle döner', async () => {
+    const adapter = createMockAdapter();
+    const terms = await adapter.getLegalDocument('terms');
+    expect(terms.slug).toBe('terms');
+    expect(terms.version).toBeTruthy();
+    expect(terms.content.length).toBeGreaterThan(10);
   });
 
   it('kategori listesi ve kategori detayını döner', async () => {

@@ -171,3 +171,44 @@ kontrolü + hız sınırı.
 - [ ] Hesap silme uçtan uca doğrulandı (anonimleşme sonrası giriş denemesi başarısız)
 - [ ] Secret-scanning ve `npm audit` sıfır kritik
 - [ ] Yedek geri yükleme tatbikatı yapıldı
+
+## 11. Faz 3b Uygulama Notları — Oturum, E-posta ve Hesap Silme
+
+### 11.1 Uygulanan mekanizmalar (kanıt: docs/qa entegrasyon testleri)
+
+- **Parola hash'i**: argon2id (`@node-rs/argon2`, m=19456/t=2/p=1 — OWASP).
+  Bilinmeyen e-postada sabit dummy hash doğrulaması ile zaman dengelemesi.
+- **Token mimarisi**: RS256 access (15 dk, `sid` taşır) + opak refresh
+  (256 bit, DB'de SHA-256 özeti). Rotasyon: eski refresh tek kullanımlık;
+  `replacedById` zinciri; reuse-detection tüm aileyi (`familyId`) iptal eder.
+- **E-posta doğrulama**: `email_tokens` tablosu (kind=VERIFY_EMAIL/
+  RESET_PASSWORD), tek aktif anahtar kuralı, tek kullanımlık tüketim
+  (koşullu `updateMany` ile yarış güvenli). Ham anahtar yalnızca e-postada.
+- **Parola sıfırlama/değiştirme**: reset tüm oturumları kapatır; change
+  (mevcut parola doğrulamalı) diğer cihazların oturumlarını kapatır.
+- **Rate limit**: bellek içi kayan pencere (IP+bucket). Sınır: yatay ölçek
+  için Redis şart — Faz 6 dağıtım maddesi.
+- **Mobil depolama**: token çifti expo-secure-store (Keychain/Keystore,
+  `WHEN_UNLOCKED_THIS_DEVICE_ONLY`); AsyncStorage yalnızca tercihler.
+  401 → tek uçuş refresh → tek tekrar; başarısızsa oturum temizlenir ve
+  kök layout güvenli yönlendirme yapar.
+
+### 11.2 Bilinen ödünler ve gerekçeleri
+
+| Ödün | Gerekçe |
+|------|---------|
+| İptal edilen oturumun access token'ı TTL dolana dek kriptografik geçerliliğini korur | Durumsuz JWT; enforcement refresh akışında + 15 dk kısa TTL. Faz 6'da sid blok listesi (Redis) seçeneği değerlendirilir. |
+| Rate limit tek örnekli | Redis sayaç Faz 6; tek örnek dağıtımda yetersiz kalır, belgelendi. |
+| Avatar yerel diskte | CDN/S3 Faz 4 görsel altyapısıyla; güvenli ad + magic byte + 2 MB sınırı bu fazda aktif. |
+| Nefallet purge'u cron'suz (servis yöntemi) | Kuyruk/takvim Faz 6 dağıtım maddesi; entegrasyon testi purge davranışını kanıtlar. |
+
+### 11.3 Hesap silme güvenlik notları
+
+- Silme talebi **parola teyitli**dir; talep anında tüm oturumlar kapanır.
+- Nefallet (30 gün) içinde `POST /account/restore` hesabı geri açar; mühür
+  (`deletedAt`) kalkar, doğrulama durumu korunur.
+- Purge: PII (e-posta→hash tabanlı anonim adres, parola hash'i, ad, avatar,
+  doğum yılı, oturum/cihaz/izleme/favori/bildirim verileri) silinir veya
+  anonimleşir; finansal kayıtlar (`store_transactions`, `credit_ledger`,
+  `subscriptions`) yasal saklama için anonim FK ile kalır. Ayrıntı:
+  docs/ACCOUNT_DELETION.md.

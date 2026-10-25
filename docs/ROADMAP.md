@@ -55,11 +55,10 @@
 3. Mobil uygulama mock yerine gerçek API'den feed çeker; `EXPO_PUBLIC_MOCK_API=0` ile.
 4. API tarafı için birim + e2e testleri yeşildir.
 
-**Durum**: 🚧 2a (altyapı) + 2b (tam şema + içerik/alan uçları) tamam — 21+
-tabloluk PostgreSQL şeması, 13 NestJS modülü, Swagger, gerçek PostgreSQL
-üzerinde 17 uçtan uca entegrasyon testi ve canlı smoke doğrulaması; mobil
-adapter geçişi (2c / Faz 3b) kaldı. Bkz. `docs/phases/FAZ-2.md` ve
-`docs/phases/FAZ-2B.md`.
+**Durum**: 🚧 2a + 2b tamam — 21+ tabloluk PostgreSQL şeması, 13 NestJS
+modülü, Swagger, gerçek PostgreSQL entegrasyon testleri ve canlı smoke;
+mobil gerçek adapter geçişi kaldı (Faz 3b auth uçları hazır: `EXPO_PUBLIC_MOCK_API=0`
+ile katalog uçları bağlanır). Bkz. `docs/phases/FAZ-2.md`, `docs/phases/FAZ-2B.md`.
 
 ## Faz 3 — Kimlik Doğrulama ve Hesaplar
 
@@ -70,9 +69,12 @@ token saklama (secure store), auth interceptor.
 **Kabul Kriterleri**: korumalı uca tokensız erişim 401 döner; refresh akışı
 otomatik çalışır; formlar doğrulama hatalarını Türkçe gösterir.
 
-**Durum**: 🚧 3a (mobil UI katmanı) tamam — giriş/kayıt ekranları, oturum
-bilinci ve hesap sözleşmeleri hazır (mock); sunucu tarafı (JWT, rotasyon,
-korumalı uçlar) 3b'de. Bkz. `docs/phases/FAZ-3.md`.
+**Durum**: ✅ 3a (mobil UI) + **3b (uçtan uca kimlik)** tamam — argon2id +
+RS256/refresh rotasyonu sunucuda; e-posta doğrulama, parola sıfırlama/
+değiştirme, oturum listesi/iptali, avatar altyapısı, hesap silme + nefallet/
+geri alma, yasal metinler, rate limit ve Mailpit/outbox e-posta altyapısı
+devrede; mobil SecureStore + otomatik refresh + güvenli yönlendirme bağlı.
+Kanıt: `docs/phases/FAZ-3B.md` (109 API + 87 mobil test, 22/22 canlı probe).
 
 ## Faz 4 — Video Akışı ve Oynatma
 

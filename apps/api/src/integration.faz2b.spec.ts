@@ -9,12 +9,13 @@
  * dürüstçe SKIP edilir (sahte başarı yok — kural: engelli test başarı
  * sayılmaz). CI'da `INTEGRATION_DATABASE_URL` verilerek koşulur.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 import { execSync, spawnSync } from 'node:child_process';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { RateLimiterService } from './auth/rate-limit.service.js';
 
 const ADMIN_DB_URL = 'postgresql://perdego:perdego_dev_pass@127.0.0.1:5432/postgres';
 const TEST_DB = 'perdego_faz2b_test';
@@ -70,6 +71,40 @@ async function api<T>(
   return { status: res.status, body };
 }
 
+/** Faz 3b: outbox dosyasından verilen e-postaya ait SON anahtarı okur. */
+async function lastTokenFor(email: string): Promise<string> {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const outboxPath = process.env.MAIL_OUTBOX_FILE!;
+  if (!existsSync(outboxPath)) throw new Error(`outbox yok: ${outboxPath}`);
+  const lines = readFileSync(outboxPath, 'utf8').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const record = JSON.parse(lines[i]!) as { to?: string; text?: string };
+    if (record.to === email && record.text) {
+      const match = record.text.match(/token=([A-Za-z0-9_-]+)/);
+      if (match) return match[1]!;
+    }
+  }
+  throw new Error(`anahtar bulunamadı: ${email}`);
+}
+
+/** Kayıt → doğrulama (Faz 3b politikası: doğrulanmamış hesapta oturum kilitli). */
+async function registerVerified(
+  displayName: string,
+  email: string,
+  password = 'Qa123456',
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const reg = await api<{ tokens: { accessToken: string; refreshToken: string } }>('POST', '/auth/register', {
+    body: { displayName, email, password },
+  });
+  expect(reg.status).toBe(201);
+  const verify = await api<{ verified: boolean }>('POST', '/auth/verify-email', {
+    body: { token: await lastTokenFor(email) },
+  });
+  expect(verify.status).toBe(201);
+  const { accessToken, refreshToken } = reg.body.data!.tokens;
+  return { accessToken, refreshToken };
+}
+
 async function login(email: string, password: string): Promise<string> {
   const { body } = await api<{ tokens: { accessToken: string } }>('POST', '/auth/login', {
     body: { email, password },
@@ -105,6 +140,8 @@ beforeAll(async () => {
   // 4) Uygulamayı gerçek HTTP dinleyicisiyle ayağa kaldır
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = TEST_DB_URL;
+  // Faz 3b: doğrulama e-postalarını run-bağımsız dosyadan okuruz.
+  process.env.MAIL_OUTBOX_FILE = `/tmp/perdego-mail-${randomUUID().slice(0, 8)}.jsonl`;
   const { AppModule } = await import('./app.module.js');
   const { configureApp } = await import('./bootstrap.js');
   const { loadEnv } = await import('./config/env.schema.js');
@@ -124,6 +161,11 @@ afterAll(async () => {
 });
 
 describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek PostgreSQL)', () => {
+  beforeEach(async () => {
+    // Faz 3b: hız sınırlayıcı izolasyonu — her test kendi penceresiyle başlar.
+    app?.get(RateLimiterService)?.reset?.();
+  });
+
   it('01 · health uçları gerçek DB raporlar', async () => {
     const live = await fetch(`${baseUrl}/health`);
     expect(live.status).toBe(200);
@@ -255,10 +297,8 @@ describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek Postgr
 
   it('09 · refresh rotasyonu + reuse detection tüm aileyi iptal eder (SECURITY.md)', async () => {
     const email = `rot-${randomUUID().slice(0, 8)}@perdego.dev`;
-    const reg = await api<{ tokens: { refreshToken: string } }>('POST', '/auth/register', {
-      body: { displayName: 'Rotasyon QA', email, password: 'Qa123456' },
-    });
-    const first = reg.body.data!.tokens.refreshToken;
+    const reg = await registerVerified('Rotasyon QA', email);
+    const first = reg.refreshToken;
 
     const rotated = await api<{ tokens: { accessToken: string; refreshToken: string } }>('POST', '/auth/refresh', {
       body: { refreshToken: first },
@@ -341,10 +381,8 @@ describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek Postgr
 
   it('13 · kredi akışı (Kural 3/4): yetersiz → 402, admin düzeltmesi, unlock, tekrar unlock ücretlendirmez; ledger = cüzdan', async () => {
     const email = `credit-${randomUUID().slice(0, 8)}@perdego.dev`;
-    const reg = await api<{ tokens: { accessToken: string } }>('POST', '/auth/register', {
-      body: { displayName: 'Kredi QA', email, password: 'Qa123456' },
-    });
-    const token = reg.body.data!.tokens.accessToken;
+    const reg = await registerVerified('Kredi QA', email);
+    const token = reg.accessToken;
 
     const detail = await api<{ accessSeasons: Array<{ episodes: Array<{ id: string; creditCost: number | null }> }> }>(
       'GET',
@@ -462,10 +500,9 @@ describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek Postgr
 
   it('15 · webhook idempotent (Kural 7): ikinci aynı olay SKIPPED, abonelik/iade akışları ayrı', async () => {
     const email = `wh-${randomUUID().slice(0, 8)}@perdego.dev`;
-    const reg = await api<{ user: { id: string } }>('POST', '/auth/register', {
-      body: { displayName: 'Webhook QA', email, password: 'Qa123456' },
-    });
-    const userId = reg.body.data!.user.id;
+    const reg = await registerVerified('Webhook QA', email);
+    const me = await api<{ id: string }>('GET', '/me', { token: reg.accessToken });
+    const userId = me.body.data!.id;
     const eventId = `evt-${randomUUID().slice(0, 8)}`;
     const payload = {
       userId,
@@ -504,10 +541,8 @@ describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek Postgr
 
     // Aboneliksiz kullanıcı → SUBSCRIPTION bölüm 402 NEEDS_SUBSCRIPTION
     const email = `play-${randomUUID().slice(0, 8)}@perdego.dev`;
-    const reg = await api<{ tokens: { accessToken: string } }>('POST', '/auth/register', {
-      body: { displayName: 'Oynatma QA', email, password: 'Qa123456' },
-    });
-    const token = reg.body.data!.tokens.accessToken;
+    const reg = await registerVerified('Oynatma QA', email);
+    const token = reg.accessToken;
     const subDetail = await api<{ accessSeasons: Array<{ episodes: Array<{ id: string; accessType: string }> }> }>(
       'GET',
       '/catalog/titles/son-vardiya',

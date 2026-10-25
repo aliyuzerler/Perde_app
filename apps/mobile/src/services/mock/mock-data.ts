@@ -638,24 +638,34 @@ export const mockWalletTransactionsResponse: WalletTransactionsResponse = {
 };
 
 /** Mock kullanıcılar — parolalar düz tutulur (yalnızca geliştirme; gerçek
- * kimlik doğrulama argon2id ile sunucuda yapılır, bkz. docs/SECURITY.md). */
+ * kimlik doğrulama argon2id ile sunucuda yapılır, bkz. docs/SECURITY.md).
+ * Faz 3b: mock oturum artık sunucu sözleşmesiyle aynı yapıdır (token çifti +
+ * emailVerified). Mock parola politikası sunucu kurallarıyla aynıdır. */
 export interface MockUserRecord {
   id: string;
   displayName: string;
   email: string;
   password: string;
   joinedAt: string;
+  emailVerified: boolean;
+  locale: 'tr' | 'en';
+  role: 'USER' | 'EDITOR' | 'ADMIN';
 }
 
-export const mockUsers: MockUserRecord[] = [
+const INITIAL_MOCK_USERS: MockUserRecord[] = [
   {
     id: 'u_dev_001',
     displayName: 'Deniz Aksoy',
     email: 'deniz@ornek.com',
-    password: 'perdego',
+    password: 'perdego1',
     joinedAt: '2025-03-14T10:00:00.000Z',
+    emailVerified: true,
+    locale: 'tr',
+    role: 'USER',
   },
 ];
+
+export const mockUsers: MockUserRecord[] = INITIAL_MOCK_USERS.map((user) => ({ ...user }));
 
 /** Cüzdan geçici durum — mock adapter satın alma akışlarında günceller. */
 export const mockWalletState: Wallet = { ...mockWallet };
@@ -677,8 +687,37 @@ export function createMockSession(user: MockUserRecord): AuthSession {
       id: user.id,
       displayName: user.displayName,
       email: user.email,
+      locale: user.locale,
+      role: user.role,
       joinedAt: user.joinedAt,
+      emailVerified: user.emailVerified,
     },
-    sessionToken: `mock-session-${user.id}-${Date.now()}`,
+    tokens: {
+      accessToken: `mock-access-${user.id}-${Date.now()}`,
+      refreshToken: `mock-refresh-${user.id}-${Date.now()}`,
+      expiresIn: 900,
+    },
   };
+}
+
+/** Test/denetim yardımcıları: mock kullanıcı ve kutu durumunu sıfırlar. */
+export function resetMockUsers(): void {
+  mockUsers.splice(0, mockUsers.length);
+  for (const user of INITIAL_MOCK_USERS) {
+    mockUsers.push({ ...user });
+  }
+}
+
+/** Mock e-posta kutusu — doğrulama/sıfırlama akışlarının geliştirmede
+ * uçtan uca denenebilmesi için gönderilen e-postalar burada tutulur. */
+export interface MockEmail {
+  to: string;
+  subject: string;
+  /** E-postadaki tek kullanımlık anahtar (bağlantıdan ayrıştırılmış). */
+  token: string;
+  sentAt: string;
+}
+export const mockOutbox: MockEmail[] = [];
+export function pushMockEmail(to: string, subject: string, token: string): void {
+  mockOutbox.push({ to, subject, token, sentAt: new Date().toISOString() });
 }

@@ -1,12 +1,15 @@
 /**
- * Giriş ekranı (Faz 3 — mock kimlik doğrulama).
- * Doğrulama sözleşme şemalarıyla aynı kurallara göre istemci tarafında yapılır;
- * gerçek kimlik akışı (argon2id + JWT + SecureStore) Faz 3 sunucu fazında
- * devreye alınacaktır. Mock hesap: deniz@ornek.com / perdego
+ * Giriş ekranı (Faz 3b: gerçek kimlik akışı).
+ *
+ * - İstemci doğrulaması sunucu sözleşmesiyle aynı kurallar (contracts şeması).
+ * - Şifre göster/gizle düğmesi (mobil kural).
+ * - Sunucu nedenleri Türkçe mesaja çevrilir: BAD_CREDENTIALS, EMAIL_NOT_VERIFIED
+ *   (doğrulama akışına yönlendirme), RATE_LIMITED vb.
+ * - Yüklenme durumu düğmede; ağ hatası ayrı mesaj.
  */
 import { useState } from 'react';
 import { StyleSheet, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { contentApi } from '@/services/adapter';
@@ -15,6 +18,7 @@ import { AppText } from '@/components/ui/app-text';
 import { AppButton } from '@/components/ui/app-button';
 import { AuthField } from '@/components/ui/auth-field';
 import { useAuthStore } from '@/store/auth-store';
+import { useDescribeApiError } from '@/utils/api-error';
 import { spacing } from '@/theme/tokens';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,28 +26,37 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function LoginScreen() {
   const { theme } = useTheme();
   const t = useT();
+  const describeError = useDescribeApiError();
   const styles = getStyles(theme.colors);
   const setSession = useAuthStore((state) => state.setSession);
+  const params = useLocalSearchParams<{ reason?: string }>();
+  const sessionExpired = params.reason === 'session-expired';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
   const [submitting, setSubmitting] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   const submit = async () => {
     const nextErrors: typeof errors = {};
     if (!EMAIL_RE.test(email.trim())) nextErrors.email = t('auth.invalidEmail');
-    if (password.length < 6) nextErrors.password = t('auth.shortPassword');
+    if (password.length === 0) nextErrors.password = t('auth.errorGeneric');
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
     setSubmitting(true);
+    setUnverifiedEmail(null);
     try {
       const session = await contentApi.login({ email: email.trim(), password });
       setSession(session);
       router.replace('/');
-    } catch {
-      setErrors({ form: t('auth.loginFailed') });
+    } catch (error) {
+      const message = describeError(error);
+      const isUnverified =
+        (error as { emailNotVerified?: boolean }).emailNotVerified === true;
+      setErrors({ form: message });
+      if (isUnverified) setUnverifiedEmail(email.trim());
     } finally {
       setSubmitting(false);
     }
@@ -57,9 +70,21 @@ export default function LoginScreen() {
       >
         <View style={styles.body}>
           <AppText variant="display">{t('auth.loginTitle')}</AppText>
-          <AppText variant="caption" color="textSubtle">
-            {t('auth.mockHint')}
-          </AppText>
+          {sessionExpired ? (
+            <View
+              style={styles.sessionNotice}
+              accessibilityLiveRegion="polite"
+            >
+              <AppText variant="label">{t('auth.loginRequiredTitle')}</AppText>
+              <AppText variant="caption" color="textMuted">
+                {t('auth.loginRequiredBody')}
+              </AppText>
+            </View>
+          ) : (
+            <AppText variant="caption" color="textSubtle">
+              {t('auth.mockHint')}
+            </AppText>
+          )}
 
           <AuthField
             label={t('auth.emailLabel')}
@@ -75,17 +100,35 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            secureToggle
             error={errors.password}
           />
 
           {errors.form ? (
-            <AppText
-              variant="caption"
-              style={{ color: theme.colors.accent }}
+            <View
+              style={styles.formError}
               accessibilityLiveRegion="polite"
             >
-              {errors.form}
-            </AppText>
+              <AppText variant="caption" style={{ color: theme.colors.accent }}>
+                {errors.form}
+              </AppText>
+              {unverifiedEmail ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/auth/verify-email-notice',
+                      params: { email: unverifiedEmail },
+                    })
+                  }
+                  style={styles.linkButton}
+                >
+                  <AppText variant="label" style={{ color: theme.colors.accent }}>
+                    {t('auth.verifyNoticeTitle')}
+                  </AppText>
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
 
           <AppButton
@@ -93,6 +136,16 @@ export default function LoginScreen() {
             onPress={() => void submit()}
             disabled={submitting}
           />
+
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push('/auth/forgot-password')}
+            style={styles.linkButton}
+          >
+            <AppText variant="body" style={{ color: theme.colors.textMuted }}>
+              {t('auth.forgotTitle')}
+            </AppText>
+          </Pressable>
 
           <View style={styles.links}>
             <AppText variant="body" color="textMuted">
@@ -118,10 +171,6 @@ export default function LoginScreen() {
               {t('auth.guestCta')}
             </AppText>
           </Pressable>
-
-          <AppText variant="caption" color="textSubtle" style={styles.notice}>
-            {t('auth.mockNotice')}
-          </AppText>
         </View>
       </KeyboardAvoidingView>
     </ScreenContainer>
@@ -140,6 +189,17 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
       gap: spacing[3],
       justifyContent: 'center',
     },
+    formError: {
+      gap: spacing[1],
+    },
+    sessionNotice: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: 4,
+      padding: spacing[3],
+      gap: spacing[1],
+    },
     links: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -156,8 +216,5 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
       minHeight: 44,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    notice: {
-      textAlign: 'center',
     },
   });

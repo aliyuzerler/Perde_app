@@ -187,3 +187,25 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — kabul kriterleri (temiz DB migration, sözleşme-kod uyumu, bütünlük ihlali engeli) gerçek kanıtla sağlandı; uyarılar dış bağımlılıklar (Docker/mağaza/HLS/push) ve docker PG'de ilk deploy gözlemi.
 - Değişen: apps/api/prisma/migrations/20261025120000_ledger_append_only (yeni), src/integration.faz2b.spec.ts (test 18), package.json (postinstall), pnpm-workspace.yaml, scripts/qa-pg/package.json, scripts/qa-faz3-{db-probe.sh,api-probe.mjs} (yeni), docs/phases/FAZ-2B.md (düzeltme notu), docs/qa/FAZ-3-QA.md (yeni), .env (yeniden).
 - Sonraki ajan için: Docker'lı makinede pnpm db:up → db:deploy → db:seed; taze checkout'ta pnpm install artık client'ı otomatik üretir (postinstall); mobil gerçek adapter geçişi (Faz 3b/2c) sıradaki geliştirme.
+
+---
+Task ID: 10
+Agent: Ana ajan (Z.ai)
+Task: Faz 3b — mobil uygulama ile NestJS backend arasında uçtan uca kullanıcı kimlik doğrulaması
+
+Work Log:
+- Mevcut temel doğrulandı: argon2id + RS256 access (15 dk) + refresh rotasyonu/reuse-detection + global guard zaten Faz 2b'de vardı; eksikler e-posta doğrulama, parola sıfırlama, rate limit, mail altyapısı, avatar, hesap silme, mobil gerçek oturum akışıydı.
+- Bağımlılıklar: API + nodemailer, multer (+@types); mobil + expo-secure-store, expo-image-picker (corepack PATH kuralı: export PATH="$HOME/.local/bin:$PATH").
+- Contracts: authUser.emailVerified + 9 yeni şema; account.ts AuthSession sunucu yanıtına çevrildi (sessionToken → tokens; v1 persist migrate düşürür).
+- Prisma: users.emailVerifiedAt + EmailToken (tek aktif anahtar, SHA-256 hash) + AccountDeletionRequest (purgeAt nefallet); migration 20261026100000_faz3b_auth (temiz DB + dev DB deploy kanıtı).
+- API: MailerService (SMTP_HOST→Mailpit; boş→JSONL outbox), RateLimiterService (kayan pencere, 429+retryAfter), EmailTokenService (yarış güvenli tüketim), auth uçları (verify/resend/forgot/reset/change/sessions/revoke/logout-all), AccountService (delete-request/restore/purgeExpiredDeletions — PII anonimleştirme + finansal saklama), AvatarStorageService (magic byte, 2MB, UUID ad, eski dosya temizliği) + /uploads statik, LegalController (terms/privacy TR), seed emailVerifiedAt.
+- Mobil: secure-storage (Keychain/Keystore), auth-store v2 (+updateUser +onSessionExpired, v2 migrate), api-client v2 (Authorization, 401→tek uçuş refresh→tek tekrar, reason taşıma), session-guard + kök layout güvenli yönlendirme, 10 ekran (login/register/forgot/reset/verify×2/change-password/sessions/delete-account/edit-profile/legal) + profil misafir/üye ayrımı + AuthField göster/gizle + tr/en i18n.
+- BULUNAN VE DÜZELTİLEN KUSURLAR: (1) MailModule AppModule'a bağlanmamış → Nest init UndefinedDependencyException, vitest fork'ta SIGABRT maskesi; (2) yeni politika eski 18 entegrasyon testini kırıyordu → outbox'tan anahtar okuyan registerVerified() + test başına limiter izolasyonu; (3) 14 lint uyarısı; (4) canlı probe'da reuse-detection sonrası oturum listesi sırası hatası (probe düzeltildi — API davranışı doğruydu).
+- Testler: contracts 48/48, api 109/109 (62 birim + 34 entegrasyon + mailer/avatar/limiter), mobile 87/87; typecheck+lint 4 workspace 0 error; nest+next+expo-web build yeşil; canlı probe 22/22 (scripts/qa-faz3b-auth-probe.mjs — Mailpit gerektirmez).
+- Önemli çevre notu: süreç env'sindeki DATABASE_URL=file:...custom.db Prisma CLI'ı ezer → açık URL ver; entegrasyon testleri --pool=threads ister (fork'ta Nest init hatası SIGABRT maskeleniyor).
+- Dokümanlar: docs/phases/FAZ-3B.md (rapor), docs/ACCOUNT_DELETION.md (saklama matrisi), API_CONTRACT §2 (yeni uçlar + rate limit + politikalar), SECURITY §11 (ödünler), README (auth akışı + probe), ROADMAP durum satırları.
+
+Stage Summary:
+- Karar: PASS — 10 teknik kuralın tamamı uygulandı ve test edildi; bilinçli sınırlar (access TTL iptal gecikmesi, tek örnekli rate limit, yerel disk avatar, purge cron'u, avatar picker UI) SECURITY §11.2 ve raporda belgelendi.
+- Değişen dosyalar: 2 migration, contracts (2), api (25+), mobile (25+), docs (6), scripts/qa-faz3b-auth-probe.mjs (yeni), .env.example ×2, package.json ×2.
+- Sonraki ajan için: mobil gerçek adapter geçişi (EXPO_PUBLIC_MOCK_API=0) katalog uçlarıyla test edilmeli; avatar picker UI bağlanmalı; purge cron'u Faz 6; Mailpit'e geçiş SMTP_HOST=localhost:1025.

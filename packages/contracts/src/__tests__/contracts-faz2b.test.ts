@@ -63,10 +63,12 @@ describe('auth sözleşmeleri', () => {
         locale: 'tr',
         role: 'USER',
         joinedAt: '2026-10-25T09:00:00Z',
+        emailVerified: false,
       },
       tokens: { accessToken: 'x'.repeat(20), refreshToken: 'y'.repeat(20), expiresIn: 900 },
     });
     expect(parsed.tokens.expiresIn).toBe(900);
+    expect(parsed.user.emailVerified).toBe(false);
   });
 });
 

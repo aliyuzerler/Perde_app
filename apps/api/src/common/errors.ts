@@ -68,4 +68,8 @@ export class DomainError extends Error {
   static paymentRequired(reason: string, messageKey: string, details?: Record<string, unknown>): DomainError {
     return new DomainError({ status: 402, code: 'PAYMENT_REQUIRED', messageKey, reason, details });
   }
+
+  static tooManyRequests(reason: string, messageKey: string, details?: Record<string, unknown>): DomainError {
+    return new DomainError({ status: 429, code: 'RATE_LIMITED', messageKey, reason, details });
+  }
 }

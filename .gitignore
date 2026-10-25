@@ -57,3 +57,6 @@ scripts/qa-pg/package.json
 # Oturum çalışma artefaktları (ara çıktılar depoya girmez)
 logs/
 tool-results/
+.mail-outbox.jsonl
+uploads/
+.mail-outbox.jsonl

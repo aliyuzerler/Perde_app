@@ -10,4 +10,6 @@ export const queryKeys = {
   creditPacks: ['creditPacks'] as const,
   wallet: ['wallet'] as const,
   walletTransactions: ['walletTransactions'] as const,
+  authSessions: ['authSessions'] as const,
+  legal: (slug: 'terms' | 'privacy') => ['legal', slug] as const,
 };

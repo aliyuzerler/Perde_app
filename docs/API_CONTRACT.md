@@ -32,13 +32,35 @@
 
 | Yöntem ve yol | Özet | Kimlik |
 |---------------|------|--------|
-| `POST /auth/register` | E-posta ile kayıt | Anonim |
-| `POST /auth/login` | Giriş | Anonim |
+| `POST /auth/register` | E-posta ile kayıt (doğrulama e-postası gider) | Anonim |
+| `POST /auth/login` | Giriş — doğrulanmamış e-postada 403 EMAIL_NOT_VERIFIED | Anonim |
 | `POST /auth/refresh` | Access token yenileme (rotasyonlu) | Refresh token |
-| `POST /auth/logout` | Oturum iptali | Access |
-| `POST /auth/password/forgot` / `POST /auth/password/reset` | Şifre sıfırlama | Anonim / reset token |
-| `DELETE /account` | Hesap silme (BR-11) | Access + şifre onayı |
+| `POST /auth/logout` | Mevcut oturum iptali | Access |
+| `POST /auth/logout-all` | Tüm cihazlardan çıkış | Access |
+| `GET /auth/sessions` | Aktif oturum listesi | Access |
+| `DELETE /auth/sessions/{id}` | Tek oturumu uzaktan iptal | Access |
+| `POST /auth/verify-email` | E-posta doğrulama anahtarını tüketir | Anonim |
+| `POST /auth/resend-verification` | Doğrulama e-postasını yeniden gönder | Anonim |
+| `POST /auth/forgot-password` | Sıfırlama e-postası (yanıt daima olumlu) | Anonim |
+| `POST /auth/reset-password` | Parola sıfırlama + tüm oturumlar kapanır | Anonim |
+| `POST /auth/change-password` | Parola değiştirme + diğer oturumlar kapanır | Access |
 | `GET /me` · `PATCH /me` | Profil oku/güncelle | Access |
+| `POST /me/avatar` · `DELETE /me/avatar` | Profil fotoğrafı (jpeg/png/webp ≤ 2 MB) | Access |
+| `POST /account/delete-request` | Hesap silme talebi (parola teyitli, 30 gün nefallet) | Access |
+| `POST /account/restore` | Nefallet içinde silme talebini geri al | Anonim |
+| `GET /legal/terms` · `GET /legal/privacy` | Yasal metinler (sürümlü, anonim) | Anonim |
+
+**Rate limit (Faz 3b)**: register/login/forgot/resend/reset uçları IP başına
+kayan pencere ile sınırlıdır (varsayılan 60 sn'de login 5, register 3, reset 3).
+Aşım → `429 RATE_LIMITED` + `details.retryAfterSeconds`. Yatay ölçeklemede
+Redis tabanlı sayaç gerekir (tek örnekli bellek içi uygulama).
+
+**E-posta doğrulama politikası**: kayıt oturum açar (göz atma penceresi) ancak
+`emailVerifiedAt` mühürlenmeden YENİ giriş ve refresh reddedilir
+(`403` + `reason: "EMAIL_NOT_VERIFIED"`). Anahtarlar tek kullanımlık, DB'de
+yalnızca SHA-256 özeti saklanır; yeni anahtar üretimi eski tüketilmemiş
+anahtarı geçersiz kılar. Geliştirmede Mailpit (`SMTP_HOST=localhost:1025`)
+veya dosya outbox'u (`MAIL_OUTBOX_FILE`) kullanılır.
 
 **POST /auth/register**
 ```jsonc
@@ -58,8 +80,16 @@ Doğrulama: e-posta RFC + normalize; şifre min 8, en az 1 harf + 1 rakam
 yeniden kullanım denemesi (`reuse detection`) ilgili oturum ailesini iptal
 eder → `401 UNAUTHORIZED` + `reason: "REFRESH_REUSED"`.
 
-**DELETE /account** — `details` içinde kalan bakiye/aktif abonelik uyarısı
-döner; ikinci çağrıda `confirm: true` gövdesi zorunlu (BR-11, US-06).
+**POST /account/delete-request** — parola teyitli; hesabı derhal kilitler
+(status=DELETED), tüm oturumları kapatır ve 30 günlük nefallet başlatır
+(yanıt: `purgeAt`). Süre sonunda kişisel veri anonimleştirilir; finansal
+kayıtlar yasal saklama süresince korunur (docs/ACCOUNT_DELETION.md).
+`POST /account/restore` nefallet içinde hesabı geri açar ve tam oturum döner.
+
+**GET /auth/sessions** — `items[]: { id, userAgent, createdAt, expiresAt,
+current }`. Access token, oturumu kapalı olsa bile TTL'i (15 dk) dolana dek
+kriptografik olarak geçerlidir; iptal zorlaması refresh akışındadır
+(bilinçli ödün: kısa TTL + rotasyon, bkz. SECURITY.md).
 
 ## 3. Katalog ve Keşif (Faz 2)
 

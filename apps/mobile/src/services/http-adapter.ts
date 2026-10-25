@@ -1,19 +1,24 @@
 /**
- * HTTP adapter — gerçek sunucu istemcisi.
+ * HTTP adapter — gerçek sunucu istemcisi (Faz 3b: hesap uçları devrede).
  *
- * Katalog uçları (/feed, /search, /content, /categories) Faz 2b'de sunucuda
- * devreye alındığında mock yerine bu adapter seçilir. Hesap ve ödeme uçları
- * henüz sunucuda yoktur; bu adapter o yöntemlerde dürüstçe hata verir
+ * Katalog uçları (/feed, /search, /content, /categories) ve hesap uçları
+ * (auth/account/legal) gerçek API'ye bağlanır. Kredi/abonelik satın alma
+ * uçları sunucu mağaza entegrasyonu (Faz 5) öncesinde dürüstçe hata verir
  * (sahte başarılı yanıt üretmez).
  */
 import type {
+  AccountDeletionResponse,
   AuthSession,
+  AuthSessionListResponse,
+  RegisterRequest,
   CategoryDetailResponse,
   CategoryListResponse,
   Content,
   CreditPacksResponse,
   FeedResponse,
+  LegalDocument,
   PlansResponse,
+  PublicUserProfile,
   SearchParams,
   SearchResponse,
   WalletResponse,
@@ -80,15 +85,86 @@ export function createHttpAdapter(client: ApiClient): ContentApiPort {
       return Promise.reject(notYetImplemented('Faz 5'));
     },
 
-    // ---------------- Hesap (Faz 3 sunucu) ----------------
-    login(): Promise<AuthSession> {
-      return Promise.reject(notYetImplemented('Faz 3 sunucu'));
+    // ---------------- Hesap (Faz 3b sunucu) ----------------
+    async login(input: { email: string; password: string }): Promise<AuthSession> {
+      return client.post<AuthSession>('/auth/login', input);
     },
-    register(): Promise<AuthSession> {
-      return Promise.reject(notYetImplemented('Faz 3 sunucu'));
+
+    async register(request: RegisterRequest): Promise<AuthSession> {
+      return client.post<AuthSession>('/auth/register', request);
     },
-    logout(): Promise<void> {
-      return Promise.reject(notYetImplemented('Faz 3 sunucu'));
+
+    async logout(): Promise<void> {
+      await client.post('/auth/logout');
+    },
+
+    async verifyEmail(token: string): Promise<{ verified: true }> {
+      return client.post('/auth/verify-email', { token });
+    },
+
+    async resendVerification(email: string): Promise<{ sent: true }> {
+      return client.post('/auth/resend-verification', { email });
+    },
+
+    async forgotPassword(email: string): Promise<{ sent: true }> {
+      return client.post('/auth/forgot-password', { email });
+    },
+
+    async resetPassword(token: string, newPassword: string): Promise<{ reset: true }> {
+      return client.post('/auth/reset-password', { token, newPassword });
+    },
+
+    async changePassword(currentPassword: string, newPassword: string): Promise<{ changed: true }> {
+      return client.post('/auth/change-password', { currentPassword, newPassword });
+    },
+
+    async getSessions(): Promise<AuthSessionListResponse> {
+      return client.get<AuthSessionListResponse>('/auth/sessions');
+    },
+
+    async revokeSession(sessionId: string): Promise<void> {
+      await client.delete(`/auth/sessions/${encodeURIComponent(sessionId)}`);
+    },
+
+    async logoutAll(): Promise<{ revoked: number }> {
+      return client.post('/auth/logout-all');
+    },
+
+    async updateProfile(input: {
+      displayName?: string;
+      locale?: 'tr' | 'en';
+    }): Promise<PublicUserProfile> {
+      return client.patch<PublicUserProfile>('/me', input);
+    },
+
+    async uploadAvatar(file: {
+      uri: string;
+      name: string;
+      mimeType: string;
+    }): Promise<PublicUserProfile> {
+      const form = new FormData();
+      form.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType,
+      } as unknown as Blob);
+      return client.upload<PublicUserProfile>('/me/avatar', form);
+    },
+
+    async removeAvatar(): Promise<PublicUserProfile> {
+      return client.delete<PublicUserProfile>('/me/avatar');
+    },
+
+    async requestAccountDeletion(password: string): Promise<AccountDeletionResponse> {
+      return client.post<AccountDeletionResponse>('/account/delete-request', { password });
+    },
+
+    async restoreAccount(email: string, password: string): Promise<AuthSession> {
+      return client.post<AuthSession>('/account/restore', { email, password });
+    },
+
+    async getLegalDocument(slug: 'terms' | 'privacy'): Promise<LegalDocument> {
+      return client.get<LegalDocument>(`/legal/${slug}`);
     },
   };
 }

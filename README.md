@@ -120,13 +120,20 @@ sorunlu her değişken için anlaşılır bir satır yazdırır:
 - **Zarf:** her yanıt `{ ok: true, data }` ya da `{ ok: false, error: { code, message, details } }`
 - **Kimlik:** `Authorization: Bearer <accessToken>` (RS256, 15 dk); para/kredi
   POST uçlarında `Idempotency-Key` zorunludur (BR-06)
-- **Demo hesaplar** (yalnızca seed):
+- **Demo hesaplar** (yalnızca seed — Faz 3b'den beri e-postaları doğrulanmış doğar):
 
 | E-posta | Şifre | Rol |
 |---------|-------|-----|
 | `admin@perdego.dev` | `Admin12345` | ADMIN |
 | `editor@perdego.dev` | `Admin12345` | EDITOR |
 | `viewer@perdego.dev` | `Dev12345` | USER (abone + kredi cüzdanı) |
+
+- **Kimlik akışı (Faz 3b):** kayıt → Mailpit/outbox'taki bağlantıya dokunma
+  (`POST /auth/verify-email`) → giriş. Doğrulanmamış hesapta giriş 403
+  `EMAIL_NOT_VERIFIED`. Yerel e-posta testi: `SMTP_HOST=localhost:1025`
+  (Mailpit) **veya** SMTP_HOST boşken `MAIL_OUTBOX_FILE` JSONL outbox'u.
+- **Canlı probe:** `node scripts/qa-faz3b-auth-probe.mjs [baseUrl]` — auth
+  uçlarını uçtan uca denetler (22 kontrol; Mailpit gerektirmez).
 
 Seed verisi özgün kurgudur (telifli afiş/yapım yok); görseller API'nin kendi
 SVG placeholder'larıdır (`/placeholders/...`).

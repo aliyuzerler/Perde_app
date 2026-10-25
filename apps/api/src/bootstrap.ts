@@ -8,6 +8,8 @@ import { INestApplication } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json } from 'express';
+import { resolve } from 'node:path';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { EnvelopeInterceptor } from './common/envelope.interceptor';
 import { AllExceptionsFilter } from './common/error-filter';
 import { registerContractSchemas } from './common/openapi-schemas';
@@ -40,6 +42,19 @@ export function configureApp(app: INestApplication, env: Env): void {
   const reflector = app.get(Reflector);
   app.useGlobalInterceptors(new EnvelopeInterceptor(reflector));
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Profil fotoğrafları: /uploads/avatars/<dosya> statik yayın (Faz 3b).
+  // setGlobalPrefix Nest rotalarını etkiler; express middleware'i kökte kalır.
+  // Not: platform-express uygulaması üzerinde çalışır (cast güvenli — tek
+  // adapter express'tir; testler de aynı kurulumu kullanır).
+  (app as NestExpressApplication).useStaticAssets(
+    resolve(process.cwd(), env.UPLOAD_DIR),
+    {
+      prefix: '/uploads',
+      maxAge: '30d',
+      immutable: true,
+    },
+  );
 
   // Swagger / OpenAPI — sözleşme şemaları bileşen olarak kaydedilir.
   const config = new DocumentBuilder()

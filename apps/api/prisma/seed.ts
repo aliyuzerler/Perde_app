@@ -461,13 +461,15 @@ async function main(): Promise<void> {
   // 7) Demo kullanıcılar ---------------------------------------------------------
   const admin = await prisma.user.upsert({
     where: { email: 'admin@perdego.dev' },
-    update: { role: 'ADMIN', passwordHash: adminPassword },
+    update: { role: 'ADMIN', passwordHash: adminPassword, emailVerifiedAt: new Date() },
     create: {
       email: 'admin@perdego.dev',
       passwordHash: adminPassword,
       displayName: 'PerdeGo Admin',
       role: 'ADMIN',
       locale: 'tr',
+      // Demo hesaplar Faz 3b'den beri doğrulanmış doğar (giriş akışı bozulmaz).
+      emailVerifiedAt: new Date(),
       creditWallet: { create: { purchasedBalance: 0, grantedBalance: 0 } },
       notificationPreference: { create: {} },
     },
@@ -475,13 +477,14 @@ async function main(): Promise<void> {
 
   await prisma.user.upsert({
     where: { email: 'editor@perdego.dev' },
-    update: { role: 'EDITOR', passwordHash: adminPassword },
+    update: { role: 'EDITOR', passwordHash: adminPassword, emailVerifiedAt: new Date() },
     create: {
       email: 'editor@perdego.dev',
       passwordHash: adminPassword,
       displayName: 'PerdeGo Editör',
       role: 'EDITOR',
       locale: 'tr',
+      emailVerifiedAt: new Date(),
       creditWallet: { create: { purchasedBalance: 0, grantedBalance: 0 } },
       notificationPreference: { create: {} },
     },
@@ -489,7 +492,7 @@ async function main(): Promise<void> {
 
   const viewer = await prisma.user.upsert({
     where: { email: 'viewer@perdego.dev' },
-    update: { passwordHash: viewerPassword },
+    update: { passwordHash: viewerPassword, emailVerifiedAt: new Date() },
     create: {
       email: 'viewer@perdego.dev',
       passwordHash: viewerPassword,
@@ -497,6 +500,7 @@ async function main(): Promise<void> {
       role: 'USER',
       locale: 'tr',
       birthYear: 1995,
+      emailVerifiedAt: new Date(),
       creditWallet: { create: { purchasedBalance: 0, grantedBalance: 0 } },
       notificationPreference: { create: {} },
     },

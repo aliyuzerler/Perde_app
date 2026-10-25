@@ -8,6 +8,8 @@ import { ENV } from '../config/env.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtService } from './jwt.service';
+import { EmailTokenService } from './email-token.service';
+import { RateLimiterService } from './rate-limit.service';
 import { JwtAuthGuard, RolesGuard } from './guards';
 
 @Global()
@@ -33,10 +35,12 @@ import { JwtAuthGuard, RolesGuard } from './guards';
       inject: [ENV],
     },
     AuthService,
+    EmailTokenService,
+    RateLimiterService,
     JwtAuthGuard,
     RolesGuard,
   ],
   controllers: [AuthController],
-  exports: [JwtService, AuthService, JwtAuthGuard, RolesGuard],
+  exports: [JwtService, AuthService, EmailTokenService, RateLimiterService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

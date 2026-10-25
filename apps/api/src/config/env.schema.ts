@@ -82,6 +82,31 @@ export const envSchema = z
     /** Tanımlıysa webhook gövdesi X-PerdeGo-Signature: HMAC-SHA256(secret, body)
      * ile doğrulanır; tanımsızsa yalnızca development/test'te kabul edilir. */
     WEBHOOK_SIGNING_SECRET: z.string().min(16).max(256).optional(),
+
+    // --- Faz 3b: e-posta (Mailpit vb.) --------------------------------------------
+    /** Tanımlıysa SMTP (örn. Mailpit: localhost:1025); tanımsızsa geliştirme
+     * transport'u e-postaları dosyaya + konsola yazar (MAIL_OUTBOX_FILE). */
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: intFromEnv('SMTP_PORT', 1, 65535, 1025),
+    SMTP_FROM: z.string().default('PerdeGo <no-reply@perdego.local>'),
+    /** Geliştirme transport'unda e-postaların JSONL olarak yazıldığı dosya. */
+    MAIL_OUTBOX_FILE: z.string().default('.mail-outbox.jsonl'),
+
+    // --- Faz 3b: tek kullanımlık anahtarlar ve silme nefalleti -------------------
+    VERIFY_EMAIL_TTL_MINUTES: intFromEnv('VERIFY_EMAIL_TTL_MINUTES', 5, 10080, 1440),
+    RESET_TOKEN_TTL_MINUTES: intFromEnv('RESET_TOKEN_TTL_MINUTES', 5, 1440, 30),
+    DELETION_GRACE_DAYS: intFromEnv('DELETION_GRACE_DAYS', 1, 90, 30),
+
+    // --- Faz 3b: auth rate limit (tek örnek bellek içi; yatay ölçekleme
+    // için Redis tabanlı sayaç Faz sonrası) ---------------------------------------
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: intFromEnv('AUTH_RATE_LIMIT_WINDOW_SECONDS', 10, 3600, 60),
+    AUTH_RATE_LIMIT_LOGIN_MAX: intFromEnv('AUTH_RATE_LIMIT_LOGIN_MAX', 1, 100, 5),
+    AUTH_RATE_LIMIT_REGISTER_MAX: intFromEnv('AUTH_RATE_LIMIT_REGISTER_MAX', 1, 100, 3),
+    AUTH_RATE_LIMIT_RESET_MAX: intFromEnv('AUTH_RATE_LIMIT_RESET_MAX', 1, 100, 3),
+
+    // --- Faz 3b: avatar yükleme ---------------------------------------------------
+    /** Avatar dosyalarının kaydedildiği dizin (göreli: çalışma dizinine göre). */
+    UPLOAD_DIR: z.string().default('uploads'),
   })
   .refine(
     (env) =>
@@ -131,6 +156,18 @@ export function loadEnv(source: NodeJS.ProcessEnv): EnvLoadResult {
     PLAYBACK_MAX_PARALLEL: source.PLAYBACK_MAX_PARALLEL,
     IDEMPOTENCY_TTL_HOURS: source.IDEMPOTENCY_TTL_HOURS,
     WEBHOOK_SIGNING_SECRET: source.WEBHOOK_SIGNING_SECRET || undefined,
+    SMTP_HOST: source.SMTP_HOST || undefined,
+    SMTP_PORT: source.SMTP_PORT,
+    SMTP_FROM: source.SMTP_FROM,
+    MAIL_OUTBOX_FILE: source.MAIL_OUTBOX_FILE,
+    VERIFY_EMAIL_TTL_MINUTES: source.VERIFY_EMAIL_TTL_MINUTES,
+    RESET_TOKEN_TTL_MINUTES: source.RESET_TOKEN_TTL_MINUTES,
+    DELETION_GRACE_DAYS: source.DELETION_GRACE_DAYS,
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: source.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    AUTH_RATE_LIMIT_LOGIN_MAX: source.AUTH_RATE_LIMIT_LOGIN_MAX,
+    AUTH_RATE_LIMIT_REGISTER_MAX: source.AUTH_RATE_LIMIT_REGISTER_MAX,
+    AUTH_RATE_LIMIT_RESET_MAX: source.AUTH_RATE_LIMIT_RESET_MAX,
+    UPLOAD_DIR: source.UPLOAD_DIR,
   });
 
   if (parsed.success) {

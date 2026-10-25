@@ -1,42 +1,56 @@
 /**
- * Hesap ve kimlik doğrulama sözleşmeleri (Faz 3 UI mock; gerçek uçlar Faz 3
- * sunucu tarafında SECURITY.md'deki argon2id + JWT tasarımıyla devreye girer).
+ * Hesap ve kimlik doğrulama sözleşmeleri (Faz 3b: gerçek sunucu akışı).
+ *
+ * Mobil oturum tipi sunucunun AuthSessionResponse'u ile birebir aynıdır:
+ * access/refresh token çifti auth.ts'te tanımlıdır ve buradan kullanılır.
  */
 import { z } from 'zod';
 import { contentSummarySchema } from './content';
+import {
+  authSessionResponseSchema,
+  emailFieldSchema,
+  passwordFieldSchema,
+} from './auth';
 
-export const emailSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .email('Geçerli bir e-posta adresi girin');
+export const emailSchema = emailFieldSchema;
 
-/** Giriş isteği. */
+/** Giriş isteği — sunucu sözleşmesiyle tek kaynak (8+ karakter, harf+rakam). */
 export const loginRequestSchema = z.object({
-  email: emailSchema,
-  password: z.string().min(6, 'Şifre en az 6 karakter olmalıdır'),
+  email: emailFieldSchema,
+  password: z.string().min(1, 'Şifre zorunludur'),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
 /** Kayıt isteği. */
-export const registerRequestSchema = loginRequestSchema.extend({
-  displayName: z.string().trim().min(2, 'Ad en az 2 karakter olmalıdır').max(50),
+export const registerRequestSchema = z.object({
+  displayName: z.string().trim().min(2, 'Ad en az 2 karakter olmalıdır').max(60),
+  email: emailFieldSchema,
+  password: passwordFieldSchema,
   acceptTerms: z.literal(true, { error: 'Kullanım koşulları kabul edilmelidir' }),
+  locale: z.enum(['tr', 'en']).default('tr'),
 });
-export type RegisterRequest = z.infer<typeof registerRequestSchema>;
+export type RegisterRequest = z.input<typeof registerRequestSchema>;
 
-/** Oturum bilgisi. Gerçek API'de access/refresh token çifti eklenir. */
-export const authSessionSchema = z.object({
-  user: z.object({
-    id: z.string().min(1),
-    displayName: z.string().min(1),
-    email: emailSchema,
-    joinedAt: z.string().min(1),
-  }),
-  /** Mock oturum işareti; gerçek token Faz 3'te gelir. */
-  sessionToken: z.string().min(1),
-});
+/**
+ * Oturum bilgisi — sunucu yanıtıyla aynı: kullanıcı + token çifti.
+ * (Eski mock `sessionToken` alanı Faz 3b ile kaldırıldı; gerçek API'de
+ * refresh rotasyonu için refresh token zorunludur.)
+ */
+export const authSessionSchema = authSessionResponseSchema;
 export type AuthSession = z.infer<typeof authSessionSchema>;
+
+/** Parola değiştirme isteği (mobil UI). */
+export const changePasswordUiRequestSchema = z.object({
+  currentPassword: z.string().min(1, 'Mevcut parola zorunludur'),
+  newPassword: passwordFieldSchema,
+});
+export type ChangePasswordUiRequest = z.infer<typeof changePasswordUiRequestSchema>;
+
+/** Hesap silme talebi (mobil UI) — parola teyidi zorunlu. */
+export const deleteAccountUiRequestSchema = z.object({
+  password: z.string().min(1, 'Onay için parola zorunludur'),
+});
+export type DeleteAccountUiRequest = z.infer<typeof deleteAccountUiRequestSchema>;
 
 /** Kategori sözleşmeleri — keşfet/katalog alanı. */
 export const categorySchema = z.object({

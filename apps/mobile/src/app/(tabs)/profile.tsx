@@ -1,7 +1,10 @@
 /**
- * Profil ve hesap ayarları.
- * Oturum: auth-store (Faz 3 mock; gerçek kimlik Faz 3 sunucu fazında).
- * Cüzdan/abonelik durumu: mock adapter üzerinden özet görünüm.
+ * Profil ve hesap ayarları (Faz 3b: gerçek oturum + hesap güvenliği).
+ *
+ * - Misafir: giriş/kayıt çağrıları + yasal metin erişimi (farklı deneyim).
+ * - Üye: e-posta (maskeli) + doğrulama rozeti, profil düzenleme, şifre
+ *   değiştirme, etkin oturumlar, hesap silme ve çıkış.
+ * - Cüzdan/abonelik durumu: mock adapter üzerinden özet görünüm (Faz 5'e kadar).
  */
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
@@ -41,7 +44,7 @@ export default function ProfileScreen() {
   const styles = getStyles(theme.colors);
 
   const session = useAuthStore((state) => state.session);
-  const setSession = useAuthStore((state) => state.setSession);
+  const clearSession = useAuthStore((state) => state.clearSession);
   const autoplay = usePreferencesStore((state) => state.autoplayPreviews);
   const setAutoplay = usePreferencesStore((state) => state.setAutoplayPreviews);
   const dataSaver = usePreferencesStore((state) => state.dataSaver);
@@ -52,11 +55,18 @@ export default function ProfileScreen() {
   const wallet = useQuery({
     queryKey: queryKeys.wallet,
     queryFn: () => contentApi.getWallet(),
+    // Gerçek cüzdan uçları Faz 5'te devreye girer; hatayı sessiz gösteririz.
+    retry: false,
   });
 
-  const walletSummary = wallet.data
-    ? `${wallet.data.wallet.creditBalance} kredi`
-    : '—';
+  const walletSummary = wallet.data ? `${wallet.data.wallet.creditBalance} kredi` : '—';
+
+  const signOut = () => {
+    void contentApi
+      .logout()
+      .catch(() => undefined)
+      .finally(() => clearSession());
+  };
 
   return (
     <ScreenContainer>
@@ -69,11 +79,15 @@ export default function ProfileScreen() {
         {/* Kullanıcı kartı */}
         <View style={styles.profileCard}>
           <View style={styles.avatarWrap}>
-            <GradientPlaceholder
-              seed={session?.user.displayName ?? 'perdego-guest'}
-              title={session?.user.displayName ?? 'P'}
-              style={styles.avatar}
-            />
+            {session?.user.displayName ? (
+              <GradientPlaceholder
+                seed={session.user.displayName}
+                title={session.user.displayName.slice(0, 1).toUpperCase()}
+                style={styles.avatar}
+              />
+            ) : (
+              <GradientPlaceholder seed="perdego-guest" title="P" style={styles.avatar} />
+            )}
           </View>
           <View style={styles.profileTexts}>
             <AppText variant="heading">
@@ -84,9 +98,19 @@ export default function ProfileScreen() {
                 <AppText variant="caption" color="textMuted">
                   {session.user.email}
                 </AppText>
-                <AppText variant="caption" color="textSubtle">
-                  {t('profile.memberSince')}: {formatMonthYear(session.user.joinedAt)}
-                </AppText>
+                <View style={styles.badgeRow}>
+                  <AppBadge
+                    label={
+                      session.user.emailVerified
+                        ? t('auth.emailVerifiedBadge')
+                        : t('auth.emailUnverifiedBadge')
+                    }
+                    tone={session.user.emailVerified ? 'accent' : 'outline'}
+                  />
+                  <AppText variant="caption" color="textSubtle">
+                    {t('profile.memberSince')}: {formatMonthYear(session.user.joinedAt)}
+                  </AppText>
+                </View>
               </>
             ) : (
               <AppText variant="caption" color="textSubtle">
@@ -109,9 +133,7 @@ export default function ProfileScreen() {
           <View style={styles.signOutWrap}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => {
-                void contentApi.logout().finally(() => setSession(null));
-              }}
+              onPress={signOut}
               style={styles.signOutButton}
             >
               <Ionicons name="log-out-outline" size={18} color={theme.colors.accent} />
@@ -134,11 +156,49 @@ export default function ProfileScreen() {
             <SettingRow
               label={t('profile.subscription')}
               value={
-                wallet.data
-                  ? SUBSCRIPTION_LABEL[wallet.data.wallet.subscriptionStatus]
-                  : '—'
+                wallet.data ? SUBSCRIPTION_LABEL[wallet.data.wallet.subscriptionStatus] : '—'
               }
               onPress={() => router.push('/paywall')}
+            />
+          </View>
+        </View>
+
+        {/* Hesap güvenliği (yalnızca oturum açıkken — misafir farklı deneyim) */}
+        {session ? (
+          <View style={styles.section}>
+            <AppText variant="heading">{t('auth.accountSection')}</AppText>
+            <View style={styles.settingGroup}>
+              <SettingRow
+                label={t('auth.editProfile')}
+                onPress={() => router.push('/account/edit-profile')}
+              />
+              <SettingRow
+                label={t('auth.changePassword')}
+                onPress={() => router.push('/account/change-password')}
+              />
+              <SettingRow
+                label={t('auth.activeSessions')}
+                onPress={() => router.push('/account/sessions')}
+              />
+              <SettingRow
+                label={t('auth.deleteAccount')}
+                onPress={() => router.push('/account/delete-account')}
+              />
+            </View>
+          </View>
+        ) : null}
+
+        {/* Yasal metinler — misafir dahil herkese açık (kural) */}
+        <View style={styles.section}>
+          <AppText variant="heading">{t('auth.legalTitle')}</AppText>
+          <View style={styles.settingGroup}>
+            <SettingRow
+              label={t('auth.legalTerms')}
+              onPress={() => router.push('/legal/terms')}
+            />
+            <SettingRow
+              label={t('auth.legalPrivacy')}
+              onPress={() => router.push('/legal/privacy')}
             />
           </View>
         </View>
@@ -162,9 +222,7 @@ export default function ProfileScreen() {
             <SettingRow
               label={t('profile.language')}
               value={LOCALE_LABELS[locale]}
-              onPress={() =>
-                setLocale(locale === 'tr' ? 'en' : 'tr')
-              }
+              onPress={() => setLocale(locale === 'tr' ? 'en' : 'tr')}
             />
           </View>
         </View>
@@ -209,6 +267,12 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
     profileTexts: {
       flex: 1,
       gap: 2,
+    },
+    badgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      marginTop: 2,
     },
     authActions: {
       paddingHorizontal: spacing[4],

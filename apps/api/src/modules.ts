@@ -1,5 +1,8 @@
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { MailModule } from './mail/mail.module';
+import { AccountModule } from './account/account.module';
+import { LegalModule } from './legal/legal.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { CategoriesModule } from './categories/categories.module';
 import { EpisodesModule } from './episodes/episodes.module';
@@ -14,7 +17,10 @@ import { AdminModule } from './admin/admin.module';
 
 export const API_MODULES = [
   AuthModule,
+  MailModule,
   UsersModule,
+  AccountModule,
+  LegalModule,
   CatalogModule,
   CategoriesModule,
   EpisodesModule,

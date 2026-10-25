@@ -19,6 +19,7 @@ import type {
   FavoriteMutationResponse,
   HomeResponse,
   LegalDocument,
+  PlaybackSession,
   PlansResponse,
   PublicUserProfile,
   RegisterRequest,
@@ -134,6 +135,13 @@ export function createHttpAdapter(client: ApiClient): ContentApiPort {
       return client.put<{ saved: true; completed: boolean }>(
         `/watch-progress/${encodeURIComponent(episodeId)}`,
         input
+      );
+    },
+
+    // ---------------- Oynatma oturumu (FAZ 4) ----------------
+    async createPlaybackSession(episodeId: string): Promise<PlaybackSession> {
+      return client.post<PlaybackSession>(
+        `/media/playback/${encodeURIComponent(episodeId)}/session`
       );
     },
 

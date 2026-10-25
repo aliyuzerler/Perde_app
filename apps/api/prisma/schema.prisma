@@ -66,9 +66,13 @@ enum MediaProvider {
   BUNNY
   CLOUDFLARE
   MUX
+  /// Geliştirme örnek sağlayıcısı (FAZ 4): telifsiz sentetik HLS paketleri.
+  LOCAL
 }
 
 enum MediaState {
+  /// Yükleme anahtarı (ticket) üretildi; dosya henüz sağlayıcıya gitmedi (FAZ 4).
+  AWAITING_UPLOAD
   PROCESSING
   READY
   ERROR
@@ -487,12 +491,39 @@ model EpisodeMedia {
   state           MediaState    @default(PROCESSING)
   durationSeconds Int?
   errorMessage    String?
+  /// FAZ 4 yükleme akışı: orijinal dosya adı + boyut (denetim/rapor için).
+  originalName    String?
+  sizeBytes       Int?
+  /// Yükleme anahtarının geçersiz olacağı an (bilgi amaçlı; imza yetkilidir).
+  uploadExpiresAt DateTime?
+  /// Sağlayıcı READY onayı zamanı.
+  readyAt         DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  textTracks MediaTextTrack[]
 
   @@index([episodeId, state])
   @@unique([episodeId, provider, providerAssetId])
   @@map("episode_media")
+}
+
+/// Medya metin parçası (altyazı/olana). FAZ 4: local sağlayıcı demo VTT
+/// üretir; bulut sağlayıcılar kendi text track URL'lerini döndürür.
+/// URL mutlaka oynatma oturumu imzalı uçtan servis edilir (public kalıcı
+/// bağlantı yok — Kural 9).
+model MediaTextTrack {
+  id        String   @id @default(cuid())
+  mediaId   String
+  media     EpisodeMedia @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  language  String
+  label     String
+  /// Sağlayıcıya göre göreceli kimlik/URL; imzalı URL buildPlaybackSources'ta üretilir.
+  sourceRef String
+  isDefault Boolean  @default(false)
+
+  @@unique([mediaId, language])
+  @@map("media_text_tracks")
 }
 
 // ---------------------------------------------------------------------------

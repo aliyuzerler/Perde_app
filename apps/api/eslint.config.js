@@ -3,7 +3,15 @@ const tseslint = require('typescript-eslint');
 
 module.exports = tseslint.config(
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'eslint.config.js'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      'eslint.config.js',
+      // FAZ 4: ffmpeg ile üretilen örnek HLS paketleri (.ts segmentler TS değildir)
+      'media-storage/**',
+      'scripts/**',
+    ],
   },
   ...tseslint.configs.recommended,
   {

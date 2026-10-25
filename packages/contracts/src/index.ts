@@ -9,6 +9,7 @@
 export * from './common';
 export * from './content';
 export * from './catalog';
+export * from './media';
 export * from './user';
 export * from './auth';
 export * from './account';

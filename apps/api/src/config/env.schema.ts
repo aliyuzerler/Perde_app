@@ -77,6 +77,20 @@ export const envSchema = z
     PLAYBACK_TTL_SECONDS: intFromEnv('PLAYBACK_TTL_SECONDS', 60, 900, 300),
     PLAYBACK_MAX_PARALLEL: intFromEnv('PLAYBACK_MAX_PARALLEL', 1, 8, 2),
 
+    // --- Faz 4: medya sağlayıcı (video akışı) -------------------------------------
+    /** Video yayın sağlayıcısı: yalnızca LOCAL geliştirme adapter'ı uygulanmıştır;
+     * bunny|mux|cloudflare için docs/MEDIA_SETUP.md kurulum belgesine bakın.
+     * PRODUCTION'da LOCAL seçilemez (örn. veri yerel diskte kalır). */
+    MEDIA_PROVIDER: z.enum(['local', 'bunny', 'mux', 'cloudflare']).default('local'),
+    /** Sağlayıcıya doğrudan yükleme URL'inin geçerlilik süresi (saniye). */
+    MEDIA_UPLOAD_TTL_SECONDS: intFromEnv('MEDIA_UPLOAD_TTL_SECONDS', 60, 3600, 900),
+    /** Geliştirme sağlayıcısının dosya deposu (örnek paketler + yüklemeler). */
+    MEDIA_STORAGE_DIR: z.string().default('media-storage'),
+    /** Tek yükleme dosyası için üst sınır (MB). */
+    MEDIA_MAX_UPLOAD_MB: intFromEnv('MEDIA_MAX_UPLOAD_MB', 1, 8192, 512),
+    /** Geliştirme: PROCESSING → READY geçişi için sahte gecikme (ms). Testlerde 0. */
+    MEDIA_PROCESSING_DELAY_MS: intFromEnv('MEDIA_PROCESSING_DELAY_MS', 0, 600000, 1500),
+
     // --- Faz 2b: idempotensi ve webhook ------------------------------------------
     IDEMPOTENCY_TTL_HOURS: intFromEnv('IDEMPOTENCY_TTL_HOURS', 1, 72, 24),
     /** Tanımlıysa webhook gövdesi X-PerdeGo-Signature: HMAC-SHA256(secret, body)
@@ -121,12 +135,19 @@ export const envSchema = z
   )
   .refine(
     (env) =>
-      env.NODE_ENV !== 'production' ||
-      Boolean(env.JWT_ACCESS_PRIVATE_KEY && env.JWT_ACCESS_PUBLIC_KEY),
+      env.NODE_ENV !== 'production' || Boolean(env.JWT_ACCESS_PRIVATE_KEY && env.JWT_ACCESS_PUBLIC_KEY),
     {
       message:
         'PRODUCTION ortamında JWT anahtarları zorunludur (geliştirmede geçici üretilir)',
       path: ['JWT_ACCESS_PRIVATE_KEY'],
+    },
+  )
+  .refine(
+    (env) => env.NODE_ENV !== 'production' || env.MEDIA_PROVIDER !== 'local',
+    {
+      message:
+        'PRODUCTION ortamında MEDIA_PROVIDER=local seçilemez (docs/MEDIA_SETUP.md — canlı sağlayıcı kurulumuna bakın)',
+      path: ['MEDIA_PROVIDER'],
     },
   );
 
@@ -154,6 +175,11 @@ export function loadEnv(source: NodeJS.ProcessEnv): EnvLoadResult {
     PUBLIC_BASE_URL: source.PUBLIC_BASE_URL,
     PLAYBACK_TTL_SECONDS: source.PLAYBACK_TTL_SECONDS,
     PLAYBACK_MAX_PARALLEL: source.PLAYBACK_MAX_PARALLEL,
+    MEDIA_PROVIDER: source.MEDIA_PROVIDER,
+    MEDIA_UPLOAD_TTL_SECONDS: source.MEDIA_UPLOAD_TTL_SECONDS,
+    MEDIA_STORAGE_DIR: source.MEDIA_STORAGE_DIR,
+    MEDIA_MAX_UPLOAD_MB: source.MEDIA_MAX_UPLOAD_MB,
+    MEDIA_PROCESSING_DELAY_MS: source.MEDIA_PROCESSING_DELAY_MS,
     IDEMPOTENCY_TTL_HOURS: source.IDEMPOTENCY_TTL_HOURS,
     WEBHOOK_SIGNING_SECRET: source.WEBHOOK_SIGNING_SECRET || undefined,
     SMTP_HOST: source.SMTP_HOST || undefined,

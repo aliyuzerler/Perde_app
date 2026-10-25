@@ -10,7 +10,6 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -231,27 +230,20 @@ export default function ContentDetailScreen() {
   const savedEpisodeId = savedEntry?.episodeId;
 
   const startPlayback = () => {
-    if (content.kind === 'SERIES') {
-      if (savedEpisodeId) {
-        router.push({
-          pathname: '/player/[episodeId]',
-          params: { episodeId: savedEpisodeId, contentId: content.id },
-        });
-        return;
-      }
-      if (firstEpisode) {
-        router.push({
-          pathname: '/player/[episodeId]',
-          params: { episodeId: firstEpisode.id, contentId: content.id },
-        });
-      }
+    // FILM / SHORT_FILM tek "bölüm" olarak modellenir (seed) — aynı oynatıcıya gider.
+    if (savedEpisodeId) {
+      router.push({
+        pathname: '/player/[episodeId]',
+        params: { episodeId: savedEpisodeId, contentId: content.id },
+      });
       return;
     }
-    // FILM / SHORT_FILM: Faz 4'te tek medya olarak oynatılacak.
-    Alert.alert(
-      t('content.watchUnavailableTitle'),
-      t('content.watchUnavailableBody')
-    );
+    if (firstEpisode) {
+      router.push({
+        pathname: '/player/[episodeId]',
+        params: { episodeId: firstEpisode.id, contentId: content.id },
+      });
+    }
   };
 
   const openEpisode = (episode: CatalogEpisode) => {

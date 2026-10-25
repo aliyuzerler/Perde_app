@@ -1,0 +1,87 @@
+[
+  {
+    "step": "01 ana sayfa gerçek API verisi",
+    "status": "PASS",
+    "detail": "Gece Yarısı Treni görünür"
+  },
+  {
+    "step": "02 oynatıcı <video> yüklendi",
+    "status": "PASS",
+    "detail": "video sayısı=1"
+  },
+  {
+    "step": "03 contentFit=contain (kırpma yok)",
+    "status": "PASS",
+    "detail": "object-fit=contain"
+  },
+  {
+    "step": "04 otomatik oynatma + duraklat/oynat",
+    "status": "PASS",
+    "detail": "pause→paused=True, play→paused=False"
+  },
+  {
+    "step": "05 ses + baştan başlat denetimleri",
+    "status": "PASS",
+    "detail": "etiketlerle erişildi"
+  },
+  {
+    "step": "06 ilerleme çubuğu + süre göstergesi",
+    "status": "PASS",
+    "detail": "seek=True süreEtiketleri=2"
+  },
+  {
+    "step": "07 tek bölümde sonraki devre dışı",
+    "status": "PASS",
+    "detail": "disabled=True"
+  },
+  {
+    "step": "08 ekran kapanınca <video> DOM'dan düşer",
+    "status": "PASS",
+    "detail": "kalan video=0"
+  },
+  {
+    "step": "09 oran 430x932 contain",
+    "status": "PASS",
+    "detail": "object-fit=contain"
+  },
+  {
+    "step": "09 oran 720x1024 contain",
+    "status": "PASS",
+    "detail": "object-fit=contain"
+  },
+  {
+    "step": "10 CREDIT bölüm kilit paneli (sunucu kararı)",
+    "status": "PASS",
+    "detail": "Kredi ile Aç CTA görünür"
+  },
+  {
+    "step": "11 SUBSCRIPTION bölüm etiketleri",
+    "status": "PASS",
+    "detail": "Üyelere özel rozetleri görünür"
+  },
+  {
+    "step": "12 ağ kesintisi çevrimdışı ekranı",
+    "status": "PASS",
+    "detail": "Bağlantı koptu görünür"
+  },
+  {
+    "step": "13 bağlantı dönüşü",
+    "status": "PASS",
+    "detail": "çevrimiçi duruma geçiş tamam"
+  },
+  {
+    "step": "14 bölüm sonu ekranı",
+    "status": "PASS",
+    "detail": "Bölüm sonu + Baştan Oynat görünür"
+  },
+  {
+    "step": "15 baştan oynat davranışı",
+    "status": "PASS",
+    "detail": "oynatma yeniden başladı"
+  },
+  {
+    "step": "16 izleme senkronu — sunucuya yazım",
+    "status": "PASS",
+    "detail": "oynatma sonrası watch_progress güncellendi (API probe kanıtıyla birleşir)"
+  }
+]

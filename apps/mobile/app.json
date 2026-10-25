@@ -40,7 +40,9 @@
             "imageWidth": 96
           }
         }
-      ]
+      ],
+      "expo-video",
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": false,

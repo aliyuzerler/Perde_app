@@ -17,4 +17,6 @@ export const queryKeys = {
   walletTransactions: ['walletTransactions'] as const,
   authSessions: ['authSessions'] as const,
   legal: (slug: 'terms' | 'privacy') => ['legal', slug] as const,
+  /** Oynatma oturumu — kısa ömürlü imzalı URL'ler (FAZ 4). */
+  playbackSession: (episodeId: string) => ['playbackSession', episodeId] as const,
 };

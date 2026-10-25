@@ -272,3 +272,27 @@ Work Log:
 Stage Summary:
 - Karar: PASS WITH WARNINGS — kabul kriteri (katalog + kişisel listeler doğru veriyle, yetkisiz içerik erişimi olmadan) canlı kanıtla sağlandı; uyarılar dış bağımlılıklar (gerçek cihaz, Mailpit SMTP, üretim ortamı) + kalıtsal F2C-03 rozet kırpma cilası.
 - Sonraki ajan için: Faz 5/6 geliştirmesine geçilebilir (mağaza-ödeme uçları ya da admin paneli UI'sı). Canlı probe yeniden koşumu: bash scripts/qa-faz5-run-probes.sh (API restart'larını kendisi yapar; rate limiter bellek içi). UI E2E: bash scripts/qa-faz5-ui-e2e.sh. PG: bash scripts/qa-pg/setup-pg.sh. Prisma/API komutlarında DATABASE_URL'i AÇIK ver (süreç env'i file:...custom.db ezmesi sürüyor).
+
+---
+Task ID: 14
+Agent: Ana ajan (Z.ai)
+Task: FAZ 4 — gerçek dikey video oynatım sistemi + MediaProvider video altyapısı (geliştirme)
+
+Work Log:
+- Kapsam analizi: görev ROADMAP Faz 4'e denk geliyor; mevcut media.service demo manifest üretiyordu, mobil oynatıcı simülasyondü. fullstack-dev skill'i incelendi; monorepo yapısı korundu (önceki faz kararlarıyla tutarlı).
+- Örnek medya: scripts/generate-sample-media.sh — ffmpeg ile telifsiz sentetik dikey 9:16 HLS paketleri (a|b|c: 240p/360p/540p + mp4 + tr/en VTT). Sandbox dersi: script süreci çıkışta takılıyor ama iş bitiyor; ffmpeg süreçleri tamamlanıyor.
+- Prisma: migration 20261025215138_faz4_media_provider (LOCAL provider, AWAITING_UPLOAD, episode_media yeni alanlar, media_text_tracks tablosu). Seed: 13 bölüm → örnek paketler + demo altyazılar; sahte BUNNY asset'leri temizlendi (tek-READY kısmi unique index yüzünden).
+- Contracts: media.ts (playbackSession, mediaUploadTicket, mediaStatus...) + 10 test.
+- API: MediaProviderPort + LocalSampleMediaProvider (doğrudan yükleme: imzalı PUT, magic byte, ffprobe, gecikmeli PROCESSING→READY; tek-READY'de eski sürüm ERROR'a düşürülür — sıralama kusuru canlı yakalandı); media.controller gerçek HLS/MP4/VTT servisi (manifest satır yeniden yazımı, Range 206/416, imza+oturum+READY denetimi her dosya isteğinde); admin media uçları (upload-url, status, sync, list, delete); env MEDIA_* değişkenleri + PRODUCTION'da local reddi.
+- BULUNAN VE DÜZELTİLEN KUSURLAR: (D1) upload asset kimliği deterministik değil → sync yanlış dosyaya bakıp durumu geri yazıyordu; (D2) tek-READY transaction sırası UNIQUE_CONSTRAINT 409; (D3) varyant playlist segment yolları alt dizinsiz imzalanıyor → 404; (D4) MediaService↔MediaModule döngüsel import → Nest init SIGABRT maskesi (tokens.ts'e taşındı + AdminModule'e MediaModule); (D5) mobil oynatıcı yalnız position>5'te oynatıyordu → yeni bölüm otomatik oynatmıyordu (UI E2E canlı yakaladı); (D6) suffix Range 416; (D7) kısa filmde bayat "Faz 4'te gelecek" uyarısı; (D8) Express 5 wildcard param dizi döndürüyor.
+- Mobil: expo-video 58.0.12 + expo-screen-orientation; ports/adapter'lara createPlaybackSession (mock: dürüst 503 — sahte URL üretmez); playback-machine + progress-reporter (saf, testli) + video-player-commands (React Compiler uyumu — hook değerine mutasyon yok, ref yazımı yalnız olay geri çağrılarında); VideoStage (contentFit=contain ZORUNLU), PlayerControls (sürüklenebilir ilerleme, ses, tam ekran, önceki/sonraki, altyazı menüsü), durum kaplamaları (buffering/offline/error/bölüm sonu — EndOverlay 10 sn geri sayımlı otomatik geçiş + Vazgeç); ekran tam remount key ile (bellek temizliği); oturum TTL yenileme (player.replace + konum koruma); i18n tr/en 35+ yeni anahtar.
+- Testler: 341/341 (contracts 58 + api 150 + mobile 133); typecheck 4/4; lint temiz; nest build + expo export web yeşil.
+- Canlı probe: scripts/qa-faz4-media-probe.mjs + qa-faz4-run-probes.sh → 44/44 PASS (oturum, manifest→segment→vtt→mp4 Range, imza ihlalleri, 402/403/404, yükleme akışı uçtan uca, tek-READY düşürme).
+- UI E2E: scripts/qa-faz4-ui-e2e.sh (Expo web MOCK_API=0 + Playwright) → 17/17 PASS; 3 ekran oranında object-fit:contain (kırpma yok); <video> ekran kapanınca DOM'dan düşüyor (bellek); çevrimdışı ekranı + toparlanma; bölüm sonu + baştan oynat; üye izleme senkronu. E2E dersi: alt ekranlar mount kalır → ortak aria-label çakışır → :visible seçici şart.
+- Regresyon: P2C 41/41, F5 16/16, auth 22/22.
+- Dokümanlar: docs/MEDIA_SETUP.md (canlı geçiş rehberi — Bunny/Mux/CF port tablosu), docs/phases/FAZ-4.md (8 kusur kaydıyla rapor), API_CONTRACT §4 yeniden yazıldı, ROADMAP Faz 4 ✅, .env.example ×2, .gitignore (media-storage).
+
+Stage Summary:
+- Karar: FAZ 4 geliştirme kapsamı TAMAM — 12 oynatıcı özelliği + 10 video altyapı kuralı uygulandı ve kanıtlandı; kabul doğrulaması sonraki faz QA koşumudur.
+- Değişen dosyalar: api (media/provider×3, media controller/service/module, admin media controller, env, prisma schema+migration+seed, eslint), mobile (player bileşen/hook seti, ekran yenileme, i18n, adapter), contracts (media.ts), docs ×4, scripts ×5 (yeni QA araçları).
+- Sonraki ajan için: gerçek cihaz doğrulaması (native HLS/altyazı/tam ekran) EAS build sonrası; canlı sağlayıcı adapter'ı eklenirken MEDIA_SETUP.md §4 tablosu esas; UI E2E'de aria-label çakışmalarına dikkat (alt ekranlar mount kalır); probe yeniden koşumu: bash scripts/qa-faz4-run-probes.sh (örnek paketler için önce scripts/generate-sample-media.sh).

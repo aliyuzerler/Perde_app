@@ -367,18 +367,54 @@ async function main(): Promise<void> {
   }
 
   // 6) Medya asset'leri (READY) --------------------------------------------------
-  for (const episode of await prisma.episode.findMany()) {
+  // FAZ 4: yerel sağlayıcı (LOCAL) — telifsiz sentetik dikey HLS paketleri
+  // (scripts/generate-sample-media.sh ile üretilir; a|b|c round-robin).
+  // episode_media üzerindeki kısmi unique index bölüm başına TEK READY'e izin
+  // verir; bu yüzden eski fazların sahte BUNNY asset kayıtları temizlenir
+  // (gerçek dosyası hiç var olmadığından dürüst davranış budur).
+  const episodeRows = await prisma.episode.findMany({ orderBy: { createdAt: 'asc' } });
+  const bundles = ['a', 'b', 'c'] as const;
+  await prisma.episodeMedia.deleteMany({ where: { provider: 'BUNNY', providerAssetId: { startsWith: 'seed-' } } });
+  for (const [index, episode] of episodeRows.entries()) {
+    const bundle = bundles[index % bundles.length]!;
     await prisma.episodeMedia.upsert({
-      where: { episodeId_provider_providerAssetId: { episodeId: episode.id, provider: 'BUNNY', providerAssetId: `seed-${episode.id}` } },
+      where: {
+        episodeId_provider_providerAssetId: {
+          episodeId: episode.id,
+          provider: 'LOCAL',
+          providerAssetId: `sample:${bundle}`,
+        },
+      },
       update: { state: 'READY', durationSeconds: episode.durationSeconds },
       create: {
         episodeId: episode.id,
-        provider: 'BUNNY',
-        providerAssetId: `seed-${episode.id}`,
+        provider: 'LOCAL',
+        providerAssetId: `sample:${bundle}`,
         state: 'READY',
         durationSeconds: episode.durationSeconds,
       },
     });
+    const localMedia = await prisma.episodeMedia.findFirstOrThrow({
+      where: { episodeId: episode.id, provider: 'LOCAL', providerAssetId: `sample:${bundle}` },
+      select: { id: true },
+    });
+    // Örnek paketlerin demo altyazı parçaları (oturum imzalı URL ile servis edilir).
+    for (const [lang, label, isDefault] of [
+      ['tr', 'Türkçe', true],
+      ['en', 'English', false],
+    ] as const) {
+      await prisma.mediaTextTrack.upsert({
+        where: { mediaId_language: { mediaId: localMedia.id, language: lang } },
+        update: { label, isDefault },
+        create: {
+          mediaId: localMedia.id,
+          language: lang,
+          label,
+          sourceRef: `subtitles/${lang}.vtt`,
+          isDefault,
+        },
+      });
+    }
   }
 
   // 6) Ana sayfa düzeni: banner'lar + bölümler ----------------------------------

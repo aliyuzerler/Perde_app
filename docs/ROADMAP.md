@@ -11,7 +11,7 @@
 | 1 | Monorepo Temeli, Sözleşmeler ve Mobil İskelet | Çalışan workspace yapısı, `@perdego/contracts`, tasarım sistemli mobil iskelet (mock veri) | ✅ Tamamlandı |
 | 2 | API Temeli ve İçerik Hizmeti | NestJS + Prisma + PostgreSQL, içerik/feed/arama uçları, mobil uygulamanın gerçek API'ye bağlanması | 🚧 2a altyapı tamam (health, DB, admin iskelet, pnpm) — 2b içerik uçları sıradaki |
 | 3 | Kimlik Doğrulama ve Hesaplar | Kayıt/giriş, JWT access/refresh, cihaz oturumları, profil yönetimi | ⏳ |
-| 4 | Video Akışı ve Oynatma | HLS entegrasyonu, `expo-video`, sunucu tarafı erişim doğrulaması, izleme geçmişi | ⏳ |
+| 4 | Video Akışı ve Oynatma | HLS entegrasyonu, `expo-video`, sunucu tarafı erişim doğrulaması, izleme geçmişi | ✅ FAZ 4 tamam — MediaProvider portu + LOCAL örnek sağlayıcı (telifsiz HLS), imzalı oynatma/yükleme altyapısı, expo-video dikey oynatıcı, izleme senkronu; 239 test yeşil |
 | 5 | Abonelik, Kredi ve Ödemeler | RevenueCat + StoreKit/Play Billing, kredi bakiyesi, sunucu doğrulaması | ⏳ |
 | 6 | Admin Paneli | Next.js + Tailwind: içerik/bölüm yönetimi, kullanıcı ve abonelik görünümleri | ⏳ |
 | 7 | Bildirimler ve Yayın Hazırlığı | Expo Notifications, performans/sertleştirme, EAS build, mağaza hazırlığı | ⏳ |
@@ -83,12 +83,22 @@ Kanıt: `docs/phases/FAZ-3B.md` (109 API + 87 mobil test, 22/22 canlı probe).
 
 **Kapsam**: HLS yayın sağlayıcı entegrasyonu (imzalı kısa süreli URL'ler),
 `expo-video` oynatıcı, dikey tam ekran oynatma, sunucu tarafı erişim kararı
-(abonelik/kredi/bölüm kilidi), izleme geçmişi ve "devam et",带宽 dostu kalite
-seçimi (ABR).
+(abonelik/kredi/bölüm kilidi), izleme geçmişi ve "devam et", bant genişliği
+dostu kalite seçimi (ABR).
 
 **Kabul Kriterleri**: imzasız/erişimsiz video URL'si sunucudan alınamaz; oynatma
 izleme noktası sunucuya senkronize edilir; düşük bağlantıda network-failure durumu
 zarif yönetilir.
+
+**Durum**: ✅ **FAZ 4 (geliştirme) tamam** — `MediaProviderPort` sağlayıcı
+soyutlaması (LOCAL geliştirme adapter'ı: ffmpeg ile üretilen telifsiz dikey HLS
+paketleri 240p/360p/540p + tr/en altyazı); süreli imzalı doğrudan yükleme akışı
+(`AWAITING_UPLOAD→PROCESSING→READY` takibi, tek-READY kısıtıyla sürüm geçişi);
+oturumlu imzalı oynatma (HLS segment yeniden yazımı + mp4 Range 206); mobilde
+expo-video dikey oynatıcı (oynat/duraklat, ilerleme çubuğu, ses, tam ekran +
+yön kilidi, baştan başlat, önceki/sonraki bölüm, altyazı seçimi, tampon/hata/
+çevrimdışı/bölüm-sonu ekranları, kaldığı yerden devam, 5 sn'lik sunucu senkronu).
+Kanıt: `docs/phases/FAZ-4.md`, kurulum: `docs/MEDIA_SETUP.md`.
 
 ## Faz 5 — Abonelik, Kredi ve Ödemeler
 

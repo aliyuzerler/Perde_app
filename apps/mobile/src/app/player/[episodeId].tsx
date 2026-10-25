@@ -1,181 +1,359 @@
 /**
- * Dikey video oynatıcı arayüzü (Faz 3 — UI katmanı).
+ * Dikey video oynatıcı (FAZ 4) — GERÇEK video akışı.
  *
- * DÜRÜST KAPSAM: gerçek video akışı Faz 4'te (expo-video + HLS) devreye
- * alınacaktır. Bu ekran oynatma ARAYÜZÜNÜ ve ilerleme durumunu gerçek biçimde
- * yönetir: zamanlayıcıyla simüle edilen ilerleme playback-store'a YAZILIR ve
- * ana sayfadaki "İzlemeye devam et" ile Planım > Geçmiş gerçekten çalışır.
- * Sahte bir "video oynadı" izlenimi verilmez (demoNotice görünürdür).
+ * Mimari:
+ *  - Erişim kararı SUNUCUDAN (episode.access — BR-07): kilitli bölümde
+ *    oynatma oturumu dahi açılmaz (istemci tahmini yok).
+ *  - Oynatma kaynağı oturum yanıtından gelir (imzalı HLS/mp4) — uygulama
+ *    koduna video URL'i/anahtarı GÖMÜLMEZ.
+ *  - Motor (expo-video) yalnızca VideoStage + video-player-commands içinde
+ *    bilinir; kontroller ve durum makinesi motor-agnostiktir.
+ *  - İlerleme: 5 sn'de bir sunucuya yazılır (ProgressReporter) + pause/
+ *    background/unmount'ta anında; kaldığı yerden devam oturum yanıtıyla.
+ *  - Bölüm navigasyonu: key ile tam remount → eski oynatıcı belleği
+ *    serbest bırakılır (useVideoPlayer unmount'ta release eder).
  *
- * Kilit davranışı: erişim türü sunucu sözleşmesinden gelir (accessType).
- * SUBSCRIPTION → cüzdan durumu TRIALING/ACTIVE ise açık; CREDIT → bakiye
- * yeterliyse açılır (mock); FREE → her zaman açık.
+ * React Compiler uyumu: player mutasyonları modül komutlarındadır;
+ * ref yazımları yalnızca olay geri çağrılarında; countdown türetilmiş
+ * değerdir (effect gövdesinde senkron setState yok).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Pressable, AppState } from 'react-native';
+import { ActivityIndicator, AppState, Platform, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import { useQueryClient } from '@tanstack/react-query';
+import { useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
-import { contentApi } from '@/services/adapter';
 import { useEpisodeDetail } from '@/hooks/queries/use-episode-detail';
+import { useTitleDetail } from '@/hooks/queries/use-title-detail';
 import { useSaveWatchProgress } from '@/hooks/queries/use-watch-progress';
 import { useAuthStore } from '@/store/auth-store';
-import { queryKeys } from '@/hooks/queries/query-keys';
 import { AppText } from '@/components/ui/app-text';
 import { AppButton } from '@/components/ui/app-button';
 import { LoadingView } from '@/components/state-views/loading-view';
 import { ErrorView } from '@/components/state-views/error-view';
 import { usePlaybackStore, type PlaybackEntry } from '@/store/playback-store';
-import { colors as palette, spacing } from '@/theme/tokens';
-import { formatDuration } from '@/utils/format';
+import { useNetworkStatus } from '@/hooks/use-network';
+import { usePlaybackSession } from '@/hooks/player/use-playback-session';
+import { findEpisodeNeighbors } from '@/hooks/player/use-episode-neighbors';
+import { VideoStage } from '@/components/player/video-stage';
+import { PlayerControls } from '@/components/player/player-controls';
+import {
+  BufferingOverlay,
+  EndOverlay,
+  PlaybackErrorOverlay,
+} from '@/components/player/player-states';
+import {
+  derivePhase,
+  isSessionExpiring,
+  pickPlaybackSource,
+  type PlaybackPhase,
+} from '@/components/player/playback-machine';
+import { ProgressReporter } from '@/components/player/progress-reporter';
+import {
+  replacePlayerSource,
+  restartPlayer,
+  seekPlayer,
+  setPlayerMuted,
+  setPlayerSubtitleTrack,
+  setPlayerTimeUpdateInterval,
+  startPlayer,
+  stopPlayer,
+} from '@/components/player/video-player-commands';
+import { queryKeys } from '@/hooks/queries/query-keys';
+import { palette, spacing } from '@/theme/tokens';
 
-/** Kredili bölümün mock maliyeti (sunucu Faz 5'te creditCost ile verecek). */
-const CREDIT_EPISODE_COST = 80;
+/** Sonraki bölüme otomatik geçiş geri sayımı (sn). */
+const AUTO_NEXT_SECONDS = 10;
+const RESUME_MIN_SECONDS = 5;
+const SESSION_REFRESH_CHECK_MS = 30_000;
 
 export default function PlayerScreen() {
-  const { theme } = useTheme();
-  const t = useT();
-  const styles = getStyles(theme.colors);
   const params = useLocalSearchParams<{ episodeId: string }>();
   const episodeId = typeof params.episodeId === 'string' ? params.episodeId : '';
+  // Bölüm değişiminde tam remount: eski oynatıcı/dinleyiciler bellekten temizlenir.
+  return <PlayerScreenContent key={episodeId} episodeId={episodeId} />;
+}
 
-  // Faz 2c: bölüm detayı doğrudan sunucudan (GET /catalog/episodes/:id) —
-  // erişim kararı SUNUCUDAN gelir (access.reason), istemci tahmin etmez.
+function PlayerScreenContent({ episodeId }: { episodeId: string }) {
+  const t = useT();
+  const styles = getStyles();
+  const queryClient = useQueryClient();
+
+  // --- Ref'ler (tümü en üstte) ----------------------------------------------
+  /** Otomatik devam bir kez uygulanır — yalnızca olay geri çağrılarında yazılır. */
+  const resumeAppliedRef = useRef(false);
+  /** timeUpdate'te raporlayıcı beslemesi — olay geri çağrısı erişimi. */
+  const positionRef = useRef(0);
+
+  // --- Sunucu verisi ---------------------------------------------------------
   const episodeDetail = useEpisodeDetail(episodeId);
   const serverEpisode = episodeDetail.data;
-  const wallet = useQuery({
-    queryKey: queryKeys.wallet,
-    queryFn: () => contentApi.getWallet(),
-  });
 
-  const sessionToken = useAuthStore((state) => state.session?.tokens.accessToken ?? null);
-  const serverSync = useSaveWatchProgress();
-
-  const saveProgress = usePlaybackStore((state) => state.saveProgress);
-  const savedEntry = usePlaybackStore((state) =>
-    state.entries[episodeId]
+  // Komşu bölümler: içerik detayındaki accessSeasons'tan (sunucu kararlı).
+  const titleDetail = useTitleDetail(serverEpisode?.content.slug ?? '');
+  const neighbors = useMemo(
+    () => findEpisodeNeighbors(titleDetail.data?.accessSeasons ?? [], episodeId),
+    [titleDetail.data, episodeId]
   );
 
-  // Ekranda gösterilecek bölüm: sunucu kararı esas; yerel fallback yoksa
-  // sunucu verisi yokken (çevrimdışı) yerel kayıtlar bilgi verir.
-  const content = serverEpisode?.content;
-  const episode = useMemo(() => {
-    if (serverEpisode) {
+  // Sunucu erişim kararı (BR-07): kilitliyse oturum bile açılmaz.
+  const access = serverEpisode?.access ?? null;
+  const locked = access ? !access.canPlay : true;
+
+  // --- Oynatma oturumu -------------------------------------------------------
+  const sessionQuery = usePlaybackSession(episodeId, !locked);
+  const session = sessionQuery.data;
+  const source = useMemo(
+    () =>
+      session
+        ? pickPlaybackSource(session.sources, Platform.OS === 'web' ? 'web' : 'native')
+        : null,
+    [session]
+  );
+
+  // --- Oynatıcı (expo-video) -------------------------------------------------
+  const [playerStatus, setPlayerStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>(
+    'idle'
+  );
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playToEnd, setPlayToEnd] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [mediaDuration, setMediaDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [subtitleLanguage, setSubtitleLanguage] = useState<string | null>(null);
+
+  const player = useVideoPlayer(source, (p) => {
+    setPlayerTimeUpdateInterval(p, 1);
+  });
+
+  // --- İlerleme yazımı -------------------------------------------------------
+  const content = serverEpisode?.content ?? null;
+  const sessionToken = useAuthStore((state) => state.session?.tokens.accessToken ?? null);
+  const serverSync = useSaveWatchProgress();
+  const saveProgress = usePlaybackStore((state) => state.saveProgress);
+
+  const buildEntry = useCallback(
+    (positionSeconds: number): PlaybackEntry | null => {
+      if (!serverEpisode || !content) return null;
       return {
-        id: serverEpisode.id,
+        contentId: content.contentId,
+        contentTitle: content.title,
+        episodeId: serverEpisode.id,
+        episodeTitle: serverEpisode.title,
         seasonNumber: serverEpisode.seasonNumber,
         episodeNumber: serverEpisode.episodeNumber,
-        title: serverEpisode.title,
+        positionSeconds,
         durationSeconds: serverEpisode.durationSeconds,
-        verticalPreviewUrl: serverEpisode.verticalPreviewUrl,
+        verticalPreviewUrl: serverEpisode.verticalPreviewUrl ?? null,
+        posterUrl: content.posterUrl ?? null,
         accessType: serverEpisode.accessType,
-        creditCost: serverEpisode.creditCost ?? null,
-        access: serverEpisode.access ?? null,
+        updatedAt: Date.now(),
       };
-    }
-    return undefined;
-  }, [serverEpisode]);
+    },
+    [serverEpisode, content]
+  );
 
-  // Kilit kararı: sunucu access.canPlay esas (BR-07). Mock cüzdan bilgisi
-  // yalnızca sunucu kararı erişilemezken (offline mock akışı) yedek görevi görür.
-  const subscriptionActive =
-    wallet.data?.wallet.subscriptionStatus === 'ACTIVE' ||
-    wallet.data?.wallet.subscriptionStatus === 'TRIALING';
-  const creditBalance = wallet.data?.wallet.creditBalance ?? 0;
-  const locked = episode
-    ? episode.access
-      ? !episode.access.canPlay
-      : episode.accessType === 'SUBSCRIPTION'
-        ? !subscriptionActive
-        : episode.accessType === 'CREDIT'
-          ? creditBalance < CREDIT_EPISODE_COST
-          : false
-    : true;
-  const creditCost = episode?.creditCost ?? CREDIT_EPISODE_COST;
+  const persistPosition = useCallback(
+    (positionSeconds: number) => {
+      const entry = buildEntry(positionSeconds);
+      if (entry) saveProgress(entry);
+      if (sessionToken) {
+        void serverSync.mutateAsync({ episodeId, positionSeconds }).catch(() => undefined);
+      }
+    },
+    [buildEntry, saveProgress, serverSync, sessionToken, episodeId]
+  );
 
-  // ---- Oynatma durumu (simülasyon) ----
-  const [playing, setPlaying] = useState(false);
-  const [position, setPosition] = useState(savedEntry?.positionSeconds ?? 0);
-  const positionRef = useRef(position);
+  // Raporlayıcı render'da bir kez üretilir; en güncel yazım işlevi bağlanır.
+  // (Saati örnek kendi içinde alır — render sırasında saf olmayan çağrı yok.)
+  const reporter = useMemo(() => new ProgressReporter(), []);
   useEffect(() => {
-    positionRef.current = position;
-  }, [position]);
-  const resumedShown = savedEntry !== undefined && savedEntry.positionSeconds > 5;
-  const pulse = useSharedValue(0.6);
-
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 1400 }), -1, true);
-  }, [pulse]);
-
-  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
-
-  const persist = useCallback(() => {
-    if (!content || !episode) return;
-    const entry: PlaybackEntry = {
-      contentId: content.contentId,
-      contentTitle: content.title,
-      episodeId: episode.id,
-      episodeTitle: episode.title,
-      seasonNumber: episode.seasonNumber,
-      episodeNumber: episode.episodeNumber,
-      positionSeconds: Math.round(positionRef.current),
-      durationSeconds: episode.durationSeconds,
-      verticalPreviewUrl: episode.verticalPreviewUrl ?? null,
-      posterUrl: content.posterUrl ?? null,
-      accessType: episode.accessType,
-      updatedAt: Date.now(),
+    reporter.bindFlush(persistPosition);
+    return () => {
+      // Ekran/kaynak değişimi: bekleyen konumu yaz ve raporlayıcıyı dinlendir.
+      void reporter.flushNow();
     };
-    saveProgress(entry);
-    // Faz 2c: sunucu senkronizasyonu — oturum açıkken watch_history'ye yazılır.
-    // Sessiz uygulanır (ağ hatası yerel kaydı bozmaz; tekrar oynatmada denenir).
-    if (sessionToken) {
-      void serverSync.mutateAsync({
-        episodeId: episode.id,
-        positionSeconds: Math.round(positionRef.current),
-      }).catch(() => undefined);
-    }
-  }, [content, episode, saveProgress, serverSync, sessionToken]);
+  }, [reporter, persistPosition]);
 
-  // Zamanlayıcı: saniyede 1 ilerlet (gerçek akış Faz 4'te oynatıcı konumundan okur).
+  // --- Oynatıcı olayları -----------------------------------------------------
   useEffect(() => {
-    if (!playing || !episode) return;
-    const timer = setInterval(() => {
-      setPosition((prev) => Math.min(prev + 1, episode.durationSeconds));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [playing, episode]);
-  // Her 5 saniyede ve uygulama arka plana geçtiğinde ilerlemeyi kaydet.
-  useEffect(() => {
-    if (!playing) return;
-    const saveTimer = setInterval(persist, 5000);
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') {
-        setPlaying(false);
-        persist();
+    const statusSub = player.addListener('statusChange', ({ status }) => {
+      // Olay geri çağrısı: state/ref yazımı burada uygundur.
+      setPlayerStatus(status);
+      if (status === 'readyToPlay' && !resumeAppliedRef.current && session) {
+        resumeAppliedRef.current = true;
+        // Kaldığı yerden devam (5 sn üzeri) + otomatik oynatma (yeni bölümde de).
+        if (session.positionSeconds > RESUME_MIN_SECONDS) {
+          seekPlayer(player, session.positionSeconds);
+        }
+        startPlayer(player);
       }
     });
+    const playingSub = player.addListener('playingChange', ({ isPlaying: playing }) => {
+      setIsPlaying(playing);
+      if (!playing) {
+        void reporter.flushNow();
+      }
+    });
+    const endSub = player.addListener('playToEnd', () => {
+      setPlayToEnd(true);
+      void reporter.flushNow();
+    });
     return () => {
-      clearInterval(saveTimer);
-      subscription.remove();
+      statusSub.remove();
+      playingSub.remove();
+      endSub.remove();
     };
-  }, [playing, persist]);
+  }, [player, session, reporter]);
 
-  // Ekran kapanırken son pozisyonu kaydet.
+  // timeUpdate: pozisyon + raporlayıcı besleme (ayrı effect — sık çağrılır).
+  useEffect(() => {
+    const sub = player.addListener('timeUpdate', ({ currentTime }) => {
+      const seconds = Math.max(0, currentTime);
+      positionRef.current = seconds;
+      setPosition(seconds);
+      reporter.tick(seconds);
+    });
+    return () => sub.remove();
+  }, [player, reporter]);
+
+  // Medya süresi (metadata) — sunucu metası örnek akıştan farklı olabilir.
+  useEffect(() => {
+    const sub = player.addListener('sourceLoad', ({ duration }) => {
+      if (typeof duration === 'number' && duration > 0) setMediaDuration(duration);
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  const effectiveDuration = mediaDuration > 0 ? mediaDuration : (serverEpisode?.durationSeconds ?? 0);
+
+  // --- Oturum yenileme (TTL bitmeden sessiz geçiş) ---------------------------
+  useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(() => {
+      if (isSessionExpiring(session.expiresAt, Date.now())) {
+        void sessionQuery.refetch().then((result) => {
+          const fresh = result.data;
+          if (fresh) {
+            const next = pickPlaybackSource(fresh.sources, Platform.OS === 'web' ? 'web' : 'native');
+            replacePlayerSource(player, next);
+            seekPlayer(player, positionRef.current);
+            if (player.playing) startPlayer(player);
+          }
+        });
+      }
+    }, SESSION_REFRESH_CHECK_MS);
+    return () => clearInterval(interval);
+  }, [session, sessionQuery, player]);
+
+  // --- Arka plan / dönüş ----------------------------------------------------
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        stopPlayer(player);
+        void reporter.flushNow();
+      } else if (locked) {
+        // Paywall/kredi dönüşünde sunucu erişim kararını tazele.
+        void queryClient.invalidateQueries({ queryKey: queryKeys.episodeDetail(episodeId) });
+      }
+    });
+    return () => sub.remove();
+  }, [player, reporter, locked, episodeId, queryClient]);
+
+  // Ekran kapanırken son pozisyonu yaz (bellek temizliği + kayıp yok).
   useEffect(() => {
     return () => {
-      persist();
+      void reporter.flushNow();
+      stopPlayer(player);
     };
-  }, [persist]);
+  }, [player, reporter]);
 
+  // --- Türetilmiş faz --------------------------------------------------------
+  const phase: PlaybackPhase = useMemo(
+    () =>
+      locked
+        ? 'locked'
+        : derivePhase({
+            playerStatus,
+            isPlaying,
+            playToEnd,
+            isOnline: true, // ağ fazı aşağıda çevrimdışı kontrolüyle birleşir
+            hasSource: Boolean(source),
+          }),
+    [locked, playerStatus, isPlaying, playToEnd, source]
+  );
+  const { connectivity } = useNetworkStatus();
+  const isOffline = connectivity === 'offline';
+  const effectivePhase: PlaybackPhase = isOffline ? 'stalled' : phase;
+
+  // --- Kontroller ------------------------------------------------------------
+  const togglePlay = useCallback(() => {
+    if (effectivePhase === 'ended') {
+      restartPlayer(player);
+      setPlayToEnd(false);
+      startPlayer(player);
+      return;
+    }
+    if (player.playing) {
+      stopPlayer(player);
+      void reporter.flushNow();
+    } else {
+      startPlayer(player);
+    }
+  }, [effectivePhase, player, reporter]);
+
+  const restart = useCallback(() => {
+    seekPlayer(player, 0);
+    setPosition(0);
+    setPlayToEnd(false);
+    startPlayer(player);
+  }, [player]);
+
+  const seek = useCallback(
+    (targetSeconds: number) => {
+      const clamped = Math.min(Math.max(0, targetSeconds), Math.max(0, effectiveDuration - 0.5));
+      seekPlayer(player, clamped);
+      setPosition(clamped);
+      setPlayToEnd(false);
+    },
+    [player, effectiveDuration]
+  );
+
+  const toggleMute = useCallback(() => {
+    const next = !player.muted;
+    setPlayerMuted(player, next);
+    setMuted(next);
+  }, [player]);
+
+  const goToEpisode = useCallback(
+    (targetEpisodeId: string) => {
+      void reporter.flushNow();
+      stopPlayer(player);
+      router.replace(`/player/${targetEpisodeId}`);
+    },
+    [player, reporter]
+  );
+
+  // Altyazı seçimi: sunucu listesi ↔ oynatıcı track eşlemesi (native HLS).
+  const selectSubtitle = useCallback(
+    (language: string | null) => {
+      setSubtitleLanguage(language);
+      try {
+        const tracks = player.availableSubtitleTracks ?? [];
+        const match = language
+          ? tracks.find((track) => track.language === language) ?? null
+          : null;
+        setPlayerSubtitleTrack(player, match);
+      } catch {
+        // Web/simülatörde text track API'si olmayabilir — seçim sessiz uygulanmaz.
+      }
+    },
+    [player]
+  );
+
+  // --- Ekran durumları -------------------------------------------------------
   if (episodeDetail.isPending) {
     return (
       <View style={styles.root}>
@@ -184,153 +362,166 @@ export default function PlayerScreen() {
     );
   }
 
-  if (episodeDetail.isError || !content || !episode) {
+  if (episodeDetail.isError || !serverEpisode || !content) {
     return (
       <View style={styles.root}>
         <ErrorView
           title={t('content.notFoundTitle')}
           body={t('content.notFoundBody')}
-          onRetry={() => router.back()}
-          retryLabel={t('common.close')}
+          onRetry={() => episodeDetail.refetch()}
+          retryLabel={t('common.retry')}
           style={styles.centered}
         />
       </View>
     );
   }
 
-  const progressRatio = Math.min(1, position / episode.durationSeconds);
+  const subtitle = t('player.seasonEpisodeLabel', {
+    season: serverEpisode.seasonNumber,
+    episode: serverEpisode.episodeNumber,
+  });
 
-  return (
-    <View style={styles.root}>
-      {/* Dikey sinematik zemin (9:16) — Faz 4'te gerçek video replaces */}
-      <View style={styles.stage}>
-        <Animated.View style={[styles.glow, pulseStyle]}>
-          <LinearGradient
-            colors={[palette.accent, 'rgba(183,28,54,0.1)', palette.bg]}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+  // Kilitli: sunucu kararı + CTA (abonelik/kredi) — oturum açılmaz.
+  if (locked) {
+    const creditCost = serverEpisode.creditCost ?? null;
+    return (
+      <View style={styles.root}>
         <LinearGradient
-          pointerEvents="none"
-          colors={['transparent', 'rgba(13,13,15,0.85)', palette.bg]}
-          style={styles.bottomScrim}
+          colors={[palette.accent, 'rgba(183,28,54,0.1)', palette.bg]}
+          style={StyleSheet.absoluteFill}
         />
-      </View>
-
-      {/* Üst bar */}
-      <View style={styles.topBar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('common.close')}
-          onPress={() => {
-            setPlaying(false);
-            persist();
-            router.back();
-          }}
-          style={styles.iconButton}
-        >
-          <Ionicons name="chevron-down" size={24} color={theme.colors.text} />
-        </Pressable>
-        <View style={styles.titleWrap}>
-          <AppText variant="heading" numberOfLines={1}>
-            {content.title}
-          </AppText>
-          <AppText variant="caption" color="textSubtle">
-            {t('player.seasonEpisodeLabel', {
-              season: episode.seasonNumber,
-              episode: episode.episodeNumber,
-            })}{' '}
-            • {episode.title}
-          </AppText>
-        </View>
-      </View>
-
-      {/* Orta kontrol */}
-      <View style={styles.center}>
-        {!locked ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={playing ? t('common.cancel') : t('content.watchCta')}
-            onPress={() => setPlaying((prev) => !prev)}
-            style={styles.playButton}
-          >
-            <Ionicons
-              name={playing ? 'pause' : 'play'}
-              size={40}
-              color={theme.colors.text}
-            />
-          </Pressable>
-        ) : (
-          <Ionicons
-            name="lock-closed"
-            size={40}
-            color={theme.colors.textMuted}
-          />
-        )}
-        {resumedShown ? (
-          <AppText variant="caption" color="textSubtle" style={styles.resumeNote}>
-            {t('player.resumeNotice')}
-          </AppText>
-        ) : null}
-      </View>
-
-      {/* Alt panel */}
-      <View style={styles.bottomPanel}>
-        {locked ? (
+        <View style={styles.lockedWrap}>
           <View style={styles.lockedPanel}>
             <AppText variant="heading">{t('player.lockedTitle')}</AppText>
             <AppText variant="body" color="textMuted">
-              {episode.accessType === 'SUBSCRIPTION'
+              {serverEpisode.accessType === 'SUBSCRIPTION'
                 ? t('player.lockedSubscriptionBody')
-                : t('player.lockedCreditBody', { count: creditCost })}
+                : creditCost
+                  ? t('player.lockedCreditBody', { count: creditCost })
+                  : t('player.lockedBody')}
             </AppText>
             <View style={styles.lockActions}>
-              {episode.accessType === 'SUBSCRIPTION' ? (
-                <AppButton
-                  label={t('player.unlockWithSubscription')}
-                  onPress={() => router.push('/paywall')}
-                />
+              {serverEpisode.accessType === 'SUBSCRIPTION' ? (
+                <AppButton label={t('player.unlockWithSubscription')} onPress={() => router.push('/paywall')} />
               ) : (
                 <AppButton
-                  label={t('player.unlockWithCredits', { count: creditCost })}
+                  label={t('player.unlockWithCredits', { count: creditCost ?? 0 })}
                   onPress={() => router.push('/credits')}
                 />
               )}
             </View>
           </View>
-        ) : (
-          <>
-            <View style={styles.progressRow}>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${Math.round(progressRatio * 100)}%` },
-                  ]}
-                />
-              </View>
-            </View>
-            <View style={styles.timeRow}>
-              <AppText variant="caption" color="textSubtle">
-                {formatDuration(position)}
-              </AppText>
-              <AppText variant="caption" color="textSubtle">
-                -{formatDuration(Math.max(0, episode.durationSeconds - position))}
-              </AppText>
-            </View>
-            <AppText variant="caption" color="textSubtle" style={styles.demoNote}>
-              {t('player.demoNotice')}
-            </AppText>
-          </>
-        )}
+        </View>
       </View>
+    );
+  }
+
+  // Oturum hatası kilitli karara dönüştüyse (402/403) kilit görünümü.
+  const sessionError = sessionQuery.error as { code?: string } | null;
+  const showLockedAfterError =
+    sessionQuery.isError &&
+    (sessionError?.code === 'PAYMENT_REQUIRED' || sessionError?.code === 'FORBIDDEN');
+
+  const subtitleText = session?.textTracks ?? [];
+
+  return (
+    <View style={styles.root}>
+      <VideoStage player={player} fullscreen={fullscreen} />
+
+      {/* Faz katmanları */}
+      {effectivePhase === 'acquiring' || sessionQuery.isPending ? (
+        <View style={styles.loadingWrap} pointerEvents="none">
+          <ActivityIndicator size="large" color={palette.text} />
+          <AppText variant="caption" color="textSubtle">
+            {t('player.preparing')}
+          </AppText>
+        </View>
+      ) : null}
+
+      {effectivePhase === 'buffering' ? <BufferingOverlay /> : null}
+
+      {effectivePhase === 'stalled' ? (
+        <PlaybackErrorOverlay
+          offline
+          onRetry={() => {
+            if (!source) void sessionQuery.refetch();
+            else startPlayer(player);
+          }}
+        />
+      ) : null}
+
+      {effectivePhase === 'error' || (sessionQuery.isError && !showLockedAfterError) ? (
+        <PlaybackErrorOverlay offline={false} onRetry={() => sessionQuery.refetch()} />
+      ) : null}
+
+      {showLockedAfterError ? (
+        <View style={styles.lockedWrap}>
+          <View style={styles.lockedPanel}>
+            <AppText variant="heading">{t('player.lockedTitle')}</AppText>
+            <AppText variant="body" color="textMuted">
+              {t('player.lockedServerBody')}
+            </AppText>
+            <View style={styles.lockActions}>
+              <AppButton label={t('common.close')} variant="secondary" onPress={() => router.back()} />
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {effectivePhase === 'ended' ? (
+        <EndOverlay
+          hasNext={Boolean(neighbors.next)}
+          countdownSeconds={neighbors.next ? AUTO_NEXT_SECONDS : null}
+          nextEpisode={neighbors.next}
+          onReplay={restart}
+          onNext={() => neighbors.next && goToEpisode(neighbors.next.episodeId)}
+          onClose={() => {
+            void reporter.flushNow();
+            router.back();
+          }}
+        />
+      ) : null}
+
+      {/* Kontroller — hata/kilit/kapama katmanlarında gizlenir */}
+      {effectivePhase !== 'error' &&
+      effectivePhase !== 'stalled' &&
+      !showLockedAfterError &&
+      effectivePhase !== 'ended' ? (
+        <PlayerControls
+          title={content.title}
+          subtitle={`${subtitle} • ${serverEpisode.title}`}
+          playing={isPlaying}
+          muted={muted}
+          fullscreen={fullscreen}
+          textTracks={subtitleText}
+          selectedSubtitleLanguage={subtitleLanguage}
+          qualityLabel={
+            session ? t('player.qualityLabel', { quality: session.quality.join(' · ') }) : null
+          }
+          positionSeconds={position}
+          durationSeconds={effectiveDuration}
+          hasPrevious={Boolean(neighbors.previous)}
+          hasNext={Boolean(neighbors.next)}
+          buffering={effectivePhase === 'buffering' || effectivePhase === 'preparing'}
+          onTogglePlay={togglePlay}
+          onRestart={restart}
+          onSeek={seek}
+          onToggleMute={toggleMute}
+          onToggleFullscreen={() => setFullscreen((value) => !value)}
+          onPrevious={() => neighbors.previous && goToEpisode(neighbors.previous.episodeId)}
+          onNext={() => neighbors.next && goToEpisode(neighbors.next.episodeId)}
+          onSelectSubtitle={selectSubtitle}
+          onClose={() => {
+            void reporter.flushNow();
+            router.back();
+          }}
+        />
+      ) : null}
     </View>
   );
 }
 
-// Kilit kararı yukarıda accessType + cüzdan durumuyla veriliyor.
-
-const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
+const getStyles = () =>
   StyleSheet.create({
     root: {
       flex: 1,
@@ -340,105 +531,23 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
       flex: 1,
       justifyContent: 'center',
     },
-    stage: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: palette.bg,
-    },
-    glow: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-    },
-    bottomScrim: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-    },
-    topBar: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      paddingHorizontal: spacing[3],
-      paddingTop: spacing[5],
+    loadingWrap: {
+      ...{ position: 'absolute' as const, top: 0, right: 0, bottom: 0, left: 0 },
+      alignItems: 'center',
+      justifyContent: 'center',
       gap: spacing[2],
     },
-    iconButton: {
-      minHeight: 44,
-      minWidth: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    titleWrap: {
+    lockedWrap: {
       flex: 1,
-      gap: 2,
-    },
-    center: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing[3],
-    },
-    playButton: {
-      minHeight: 84,
-      minWidth: 84,
-      borderRadius: 4,
-      borderWidth: 2,
-      borderColor: 'rgba(245, 241, 234, 0.3)',
-      backgroundColor: 'rgba(13, 13, 15, 0.4)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    resumeNote: {
-      textAlign: 'center',
-    },
-    bottomPanel: {
+      justifyContent: 'flex-end',
       padding: spacing[4],
       paddingBottom: spacing[6],
-      gap: spacing[2],
-    },
-    progressRow: {
-      flexDirection: 'row',
-    },
-    progressTrack: {
-      flex: 1,
-      height: 4,
-      backgroundColor: 'rgba(245, 241, 234, 0.18)',
-      borderRadius: 0,
-      overflow: 'hidden',
-    },
-    progressFill: {
-      height: '100%',
-      backgroundColor: palette.accent,
-      borderRadius: 0,
-    },
-    timeRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-    actions: {
-      flexDirection: 'row',
-      gap: spacing[2],
-      marginTop: spacing[2],
-    },
-    action: {
-      flex: 1,
-    },
-    demoNote: {
-      textAlign: 'center',
-      marginTop: spacing[1],
     },
     lockedPanel: {
       gap: spacing[2],
       backgroundColor: 'rgba(13, 13, 15, 0.72)',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      borderColor: 'rgba(245, 241, 234, 0.08)',
       borderRadius: 4,
       padding: spacing[4],
     },

@@ -19,6 +19,7 @@ import type {
   HomeResponse,
   LegalDocument,
   LoginRequest,
+  PlaybackSession,
   PlansResponse,
   PublicUserProfile,
   RegisterRequest,
@@ -317,6 +318,14 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
         throw domainError(404, 'errors.episodeNotFound', 'EPISODE_NOT_FOUND');
       }
       return respond(response);
+    },
+
+    // ---------------- Oynatma oturumu (FAZ 4) ----------------
+    // DÜRÜST KAPSAM: gerçek video akışı yalnızca gerçek sunucudan gelir.
+    // Mock adapter SAHTE video URL'i ÜRETMEZ (video URL'lerini uygulama
+    // koduna gömme kuralı); oynatma için EXPO_PUBLIC_MOCK_API=0 gerekir.
+    async createPlaybackSession(): Promise<PlaybackSession> {
+      throw domainError(503, 'errors.playbackRequiresServer', 'SERVICE_UNAVAILABLE');
     },
 
     // ---------------- Abonelik ve kredi (mock) ----------------

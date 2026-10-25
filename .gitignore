@@ -60,3 +60,9 @@ tool-results/
 .mail-outbox.jsonl
 uploads/
 .mail-outbox.jsonl
+
+# FAZ 4: geliştirme örnek medya deposu (ffmpeg üretimi — depoya girmez)
+apps/api/media-storage/
+
+# Python önbelleği
+__pycache__/

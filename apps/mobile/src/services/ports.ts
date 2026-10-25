@@ -24,6 +24,7 @@ import type {
   HomeResponse,
   LegalDocument,
   LoginRequest,
+  PlaybackSession,
   PlansResponse,
   PublicUserProfile,
   RegisterRequest,
@@ -83,6 +84,15 @@ export interface ContentApiPort {
     episodeId: string,
     input: WatchProgressPut,
   ): Promise<{ saved: true; completed: boolean }>;
+
+  // ---------- Oynatma oturumu (FAZ 4: gerçek video akışı) ----------
+  /**
+   * Oynatma oturumu açar (POST /media/playback/:episodeId/session).
+   * Sunucu erişim kararını YENİDEN doğrular: kilitli bölümde 402/403 döner;
+   * yanıt kısa ömürlü imzalı akış URL'leri (hls/mp4) ve altyazı listesi taşır.
+   * Video URL'leri uygulamaya gömülmez — yalnızca oturum yanıtı ile verilir.
+   */
+  createPlaybackSession(episodeId: string): Promise<PlaybackSession>;
 
   // ---------- Abonelik ve kredi (mock; gerçek ödeme Faz 5) ----------
   /** Abonelik planları (paywall). */

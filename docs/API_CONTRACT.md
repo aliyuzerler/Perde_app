@@ -121,39 +121,65 @@ oynatma oturumu istenemez (sunucu yine de doğrular). `reason` değerleri:
 `FREE` | `SUBSCRIPTION_ACTIVE` | `NEEDS_SUBSCRIPTION` | `NEEDS_CREDITS` |
 `UNLOCKED` | `SCHEDULED` (yayın tarihi gelecekte) | `AGE_RESTRICTED`.
 
-## 4. Oynatma (Faz 4)
+## 4. Oynatma (FAZ 4 — gerçek video akışı, MediaProvider portu)
 
 | Yöntem ve yol | Özet | Kimlik |
 |---------------|------|--------|
-| `POST /playback/episodes/{id}/session` | Yetki kontrolü + imzalı HLS URL üretimi | Anonim (FREE) / Access |
-| `POST /playback/episodes/{id}/progress` | Konum senkronizasyonu (≤10 sn aralık) | Access |
-| `GET /watch-history?page=` | İzleme geçmişi | Access |
-| `GET /continue-watching` | Devam et listesi (ray) | Access |
-| `GET /favorites` · `PUT /favorites/{contentId}` · `DELETE /favorites/{contentId}` | Favoriler | Access |
+| `POST /media/playback/{episodeId}/session` | Erişim kararı + imzalı akış kaynakları (hls/mp4) + altyazı listesi | Anonim (FREE) / Access |
+| `GET /media/hls/{episodeId}/{sessionId}/*file` | İmzalı dosya servisi: master/varyant playlist, `.ts` segment, `.vtt` altyazı, `video.mp4` (Range 206) | İmzalı (token+exp) |
+| `PUT /media/upload/{mediaId}` | Sağlayıcıya doğrudan yükleme (local mod) — ham dosya gövdesi | İmzalı (token+exp) |
+| `POST /admin/episodes/{episodeId}/media/upload-url` | Süreli imzalı yükleme anahtarı üretimi | EDITOR/ADMIN |
+| `GET /admin/media/{mediaId}` · `POST /admin/media/{mediaId}/sync` | İşleme durumu (AWAITING_UPLOAD/PROCESSING/READY/ERROR) takibi | EDITOR/ADMIN |
+| `GET /admin/episodes/{episodeId}/media` · `DELETE /admin/media/{mediaId}` | Bölüm medya listesi / silme | EDITOR/ADMIN |
+| `PUT /watch-progress/{episodeId}` | Konum senkronizasyonu (5 sn aralık) | Access |
+| `GET /watch-progress` | İzleme geçmişi + devam et rayı (scope=continue\|history) | Access |
+| `GET /watchlist` · `POST/DELETE /watchlist/{contentId}` | Favoriler | Access |
 
-**POST /playback/episodes/{id}/session** — sunucu sırasıyla `episode.status`,
-`accessType`, abonelik (`subscriptions`), `episode_unlocks` ve `age_rating`
-kontrolü yapar; başarılıysa `VideoProviderAdapter.createPlayback` çağırır
-(TTL 300 sn):
+**POST /media/playback/{episodeId}/session** — sunucu sırasıyla `content.status`,
+`episode.status`, `accessType`, abonelik (`subscriptions`), `episode_unlocks`
+ve `age_rating` kontrolü yapar (BR-07); başarılıysa MediaProvider portundan
+OTURUMA ÖZGÜ imzalı kaynaklar üretir (TTL = `PLAYBACK_TTL_SECONDS`, varsayılan 300 sn):
 
 ```jsonc
-// yanıt (data)
+// yanıt (data) — contracts playbackSessionSchema
 {
   "episodeId": "ep_…",
-  "playbackUrl": "https://cdn…/manifest.m3u8?token=…",
+  "provider": "LOCAL",                      // LOCAL | BUNNY | CLOUDFLARE | MUX
+  "playbackUrl": "https://…/media/hls/{ep}/{session}/master.m3u8?token=…&exp=…",
+  "sources": {
+    "hls": "https://…/master.m3u8?token=…&exp=…",   // native (ABR + altyazı grubu)
+    "mp4": "https://…/video.mp4?token=…&exp=…"      // web/ilerleyici yedek
+  },
   "expiresAt": "2026-10-25T09:05:00Z",
   "positionSeconds": 187,            // kaldığı yer (BR-09)
-  "quality": ["240p", "360p", "480p", "720p", "1080p"]
+  "quality": ["240p", "360p", "540p"],
+  "guest": false,
+  "textTracks": [
+    { "language": "tr", "label": "Türkçe", "isDefault": true,
+      "url": "https://…/subtitles/tr.vtt?token=…&exp=…" }
+  ]
 }
 ```
 
-Hata durumları: `402 PAYMENT_REQUIRED` + `reason: NEEDS_SUBSCRIPTION |
-INSUFFICIENT_CREDITS`; `403 FORBIDDEN` + `reason: AGE_RESTRICTED |
-ACCOUNT_SUSPENDED`; `409 CONFLICT` + `reason: EPISODE_NOT_READY` (encode
-sürüyor); `404 NOT_FOUND`.
+**İmza modeli**: tüm dosya istekleri `?token=&exp=` taşır; token =
+HMAC-SHA256(secret, `playback:{sessionId}:{episodeId}:{exp}`) (32 hex). Her
+dosya isteğinde: imza + süre + oturum iptali (DB) + READY denetimi. Segment
+satırları manifest içinde sunucu tarafından imzalı mutlak URL'e yeniden
+yazılır — istemci hiçbir anahtar barındırmaz, kalıcı public URL üretilemez.
 
-İmzasız/erişimsiz URL istekleri sağlayıcı düzeyde 403 döner — istemci bunu
-`NETWORK_ERROR` değil `403` görünümüne çevirir (Faz 4 kabul kriteri).
+Hata durumları (oturum): `402 PAYMENT_REQUIRED` + `reason: NEEDS_SUBSCRIPTION |
+NEEDS_CREDITS`; `403 FORBIDDEN` + `reason: AGE_RESTRICTED`; `409 CONFLICT` +
+`reason: EPISODE_NOT_READY | PLAYBACK_LIMIT_REACHED`; `404 NOT_FOUND`.
+Dosya uçları: `403` bozuk/süresi geçmiş imza (TOKEN_INVALID/TOKEN_EXPIRED),
+`409` MEDIA_MISSING (örnek paketler üretilmemiş).
+
+**Yükleme akışı** (sağlayıcı bağımsız): `POST /admin/episodes/{id}/media/upload-url`
+→ `{ mediaId, uploadUrl, method: "PUT", headers, maxSizeBytes, expiresAt }`
+→ dosya DOĞRUDAN `uploadUrl`'e PUT edilir (ham bayt gövdesi; JSON değil)
+→ `POST /admin/media/{mediaId}/sync` ile `AWAITING_UPLOAD → PROCESSING → READY`
+izlenir. Yükleme anahtarı tek kullanımlıktır (ikinci PUT 409
+MEDIA_ALREADY_UPLOADED), TTL'i `MEDIA_UPLOAD_TTL_SECONDS` ile sınırlıdır.
+Detay: `docs/MEDIA_SETUP.md`.
 
 ## 5. Abonelik ve Ürünler (Faz 5)
 

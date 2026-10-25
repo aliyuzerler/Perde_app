@@ -5,7 +5,7 @@
  */
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
@@ -21,6 +21,7 @@ import { ContentRail } from '@/components/home/content-rail';
 import { ContinueCard } from '@/components/home/continue-card';
 import { usePlaybackStore } from '@/store/playback-store';
 import { useAuthStore } from '@/store/auth-store';
+import { usePreferencesStore } from '@/store/preferences-store';
 import { radius, spacing } from '@/theme/tokens';
 import type { ContentSummary } from '@perdego/contracts';
 
@@ -32,6 +33,11 @@ export default function HomeScreen() {
 
   const continueEntries = usePlaybackStore((state) => state.continueWatching)();
   const session = useAuthStore((state) => state.session);
+  // Açılış kapısı (ekran düzeyi): gezgin mount edikken Redirect güvenlidir.
+  // Kök layout'taki Redirect expo-router v58 web'de döngüye giriyordu (FAZ-2 QA).
+  const hasSeenOnboarding = usePreferencesStore(
+    (state) => state.hasSeenOnboarding
+  );
 
   // Kategori şeridi — sabit tür seti (Faz 2b'de sunucudan gelecek).
   const categories = useMemo(
@@ -57,6 +63,11 @@ export default function HomeScreen() {
   const verticalRail = rails.find(
     (section) => section.id === 'rail_verticals' || section.id === 'rail_shorts'
   );
+
+  // Açılış kapısı: ilk başlatmada onboarding, sonrasında ana akış.
+  if (!hasSeenOnboarding) {
+    return <Redirect href="/onboarding" />;
+  }
 
   if (feed.isPending) {
     return (

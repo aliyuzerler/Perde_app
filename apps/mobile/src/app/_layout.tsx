@@ -1,9 +1,10 @@
 /**
- * Kök yerleşim: sağlayıcı zinciri, Stack tanımı ve açılış (onboarding) kapısı.
+ * Kök yerleşim: sağlayıcı zinciri ve Stack tanımı.
  * Ekranlar burada iş mantığı içermez; veri katmanına yalnızca hook'larla erişir.
+ * Açılış (onboarding) kapısı ekran düzeyindedir: (tabs)/index.tsx.
  */
 import { useEffect, type ReactNode } from 'react';
-import { Stack, Redirect } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,9 +36,6 @@ function Providers({ children }: { children: ReactNode }) {
 
 function RootNavigator() {
   const { theme } = useTheme();
-  const hasSeenOnboarding = usePreferencesStore(
-    (state) => state.hasSeenOnboarding
-  );
 
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {
@@ -45,11 +43,11 @@ function RootNavigator() {
     });
   }, []);
 
-  // Açılış kapısı: ilk başlatmada onboarding, sonrasında ana akış.
-  if (!hasSeenOnboarding) {
-    return <Redirect href="/onboarding" />;
-  }
-
+  // NOT: Açılış (onboarding) kapısı buradan KALDIRILDI (FAZ-2 QA bulgusu).
+  // expo-router v58 web'de, gezgin yerine geçecek şekilde kök layout'ta
+  // render edilen <Redirect> sonsuz güncelleme döngüsüne giriyor (initial
+  // state seed'i tamamlanamıyor). Kapı, gezgin mount iken güvenli olan ekran
+  // düzeyi desene taşındı: (tabs)/index.tsx.
   return (
     <>
       <StatusBar style="light" />

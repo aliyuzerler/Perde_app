@@ -127,9 +127,10 @@ export default function LibraryScreen() {
         ) : (
           <View style={styles.historyList}>
             {historyEntries.map((entry) => (
+              // NOT: dış satır role=button DEĞİL — içindeki "Geçmişten çıkar" butonu
+              // gerçek <button> üretir; RNW'de iç içe <button> geçersiz HTML (FAZ-2 QA).
               <Pressable
                 key={entry.episodeId}
-                accessibilityRole="button"
                 style={[styles.historyRow, { borderBottomColor: theme.colors.border }]}
                 onPress={() =>
                   router.push({

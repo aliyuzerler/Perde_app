@@ -34,12 +34,12 @@ export function HeroBanner({
   const access = getAccessVisual(item.accessType);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={item.title}
-      onPress={onDetail}
-      style={styles.wrap}
-    >
+    // NOT: Dış kapsayıcı bilinçli olarak accessibilityRole="button" DEĞİLDİR.
+    // RNW'de role=button gerçek <button> üretir; İZLE/DETAY AppButton'ları da
+    // <button> olduğu için iç içe <button> geçersiz HTML ve web'de React DOM
+    // hatası üretir (FAZ-2 QA bulgusu). Erişilebilirlik, iç butonlar üzerinden
+    // korunur; dış Pressable yalnızca tüm-kart dokunma alanıdır.
+    <Pressable onPress={onDetail} style={styles.wrap}>
       <View style={styles.media}>
         <GradientPlaceholder seed={item.title} title={item.title} />
         <LinearGradient

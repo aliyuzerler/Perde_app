@@ -1,0 +1,172 @@
+{
+  "results": [
+    {
+      "step": "01-onboarding-acilir",
+      "status": "PASS",
+      "detail": "ilk yüklemede onboarding kapısı göründü"
+    },
+    {
+      "step": "01-onboarding-radius",
+      "status": "PASS",
+      "detail": "radius'lar: ['0px']"
+    },
+    {
+      "step": "01-zemin-renkleri",
+      "status": "PASS",
+      "detail": "büyük zeminler: ['rgb(242, 242, 242)', 'rgb(13, 13, 15)', 'rgb(13, 13, 15)']"
+    },
+    {
+      "step": "01-dev-bildirimi",
+      "status": "PASS",
+      "detail": "mock bildirimi görünür"
+    },
+    {
+      "step": "02-misafir-girisi",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/"
+    },
+    {
+      "step": "02-anasayfa-radius",
+      "status": "PASS",
+      "detail": "radius'lar: ['0px', '4px']"
+    },
+    {
+      "step": "02-anasayfa-zemin",
+      "status": "PASS",
+      "detail": "zeminler: ['rgb(242, 242, 242)', 'rgb(13, 13, 15)', 'rgb(13, 13, 15)']"
+    },
+    {
+      "step": "03-sekme-Keşfet",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/explore marker=True"
+    },
+    {
+      "step": "03-sekme-Ara",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/search marker=True"
+    },
+    {
+      "step": "03-sekme-Planim",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/library marker=True"
+    },
+    {
+      "step": "03-sekme-Profil",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/profile marker=True"
+    },
+    {
+      "step": "04-kesfet-tur-filtresi",
+      "status": "PASS",
+      "detail": "'Bilim Kurgu' çipi tıklandı"
+    },
+    {
+      "step": "05-detay-gecis",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/content/c_kum_saati"
+    },
+    {
+      "step": "05-detay-radius",
+      "status": "PASS",
+      "detail": "radius'lar: ['0px', '4px']"
+    },
+    {
+      "step": "06-detay-planim-ekle",
+      "status": "PASS",
+      "detail": "buton 'PLANIMDA' oldu"
+    },
+    {
+      "step": "07-oynatici-acilis",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/player/e_kum_101?contentId=c_kum_saati"
+    },
+    {
+      "step": "07-oynatici-radius",
+      "status": "PASS",
+      "detail": "radius'lar: ['0px']"
+    },
+    {
+      "step": "07-oynatici-sonraki-bolum",
+      "status": "PASS",
+      "detail": "tıklandı, oynatıcı güncellendi"
+    },
+    {
+      "step": "08-kilitli-abonelik-cta",
+      "status": "SKIP",
+      "detail": "mock profil deneme üyeliğinde (TRIALING) — kilitli panel tasarım gereği görünmez; kilit kararı player.tsx:86-94 + unit testler"
+    },
+    {
+      "step": "09-kilitli-kredi-cta",
+      "status": "SKIP",
+      "detail": "mock bakiyesi kredi maliyetini karşılıyor — kilitli panel tasarım gereği görünmez; karar player.tsx:86-94 + unit testler"
+    },
+    {
+      "step": "10-paywall-mock-abonelik",
+      "status": "PASS",
+      "detail": "mock abonelik başarılı ekranı"
+    },
+    {
+      "step": "11-kredi-mock-satinalma",
+      "status": "PASS",
+      "detail": "kredi eklendi bildirimi"
+    },
+    {
+      "step": "12-planim-segment",
+      "status": "PASS",
+      "detail": "'Geçmiş' segmenti tıklandı"
+    },
+    {
+      "step": "12-planim-favori-gorunur",
+      "status": "PASS",
+      "detail": "favori listede"
+    },
+    {
+      "step": "13-arama-yazma",
+      "status": "PASS",
+      "detail": "url=http://localhost:8081/search"
+    },
+    {
+      "step": "13-arama-sonuc-dogru",
+      "status": "PASS",
+      "detail": "sonuç listelendi"
+    },
+    {
+      "step": "14-giris-dogrulama",
+      "status": "PASS",
+      "detail": "boş gönderimde Türkçe doğrulama hatası"
+    },
+    {
+      "step": "14-giris-mock-basarili",
+      "status": "PASS",
+      "detail": "mock oturum açıldı"
+    },
+    {
+      "step": "15-kayit-ekrani",
+      "status": "PASS",
+      "detail": "KVKK onayı + alanlar render"
+    },
+    {
+      "step": "16-404-ekrani",
+      "status": "PASS",
+      "detail": "not-found ekranı"
+    },
+    {
+      "step": "17-konsol-ic-ice-button",
+      "status": "PASS",
+      "detail": "nested-button hatası: 0"
+    },
+    {
+      "step": "17-konsol-render-dongusu",
+      "status": "PASS",
+      "detail": "Maximum update depth: 0"
+    },
+    {
+      "step": "17-konsol-cors",
+      "status": "PASS",
+      "detail": "CORS hatası: 0"
+    }
+  ],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

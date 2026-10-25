@@ -126,3 +126,26 @@ Stage Summary:
 - 12/12 ekran derlendi ve test edildi; tam yerel işlevsel: gezinme/detay/Planim/onboarding/tercihler/ilerleme. Mock akışlı: giriş-kayıt, paywall, kredi, oynatma kilidi kararı. Sahte başarı yok ("Geliştirme modu" bildirimleri görünür).
 - Kritik kararlar: contract-first yeni alanlar; HTTP adapter dürüst hata ilkesi; playback ilerlemesi gerçek yerel katman (Faz 4'te playback_sessions ile eşleşecek).
 - Sonraki ajan için: Faz 3b (sunucu auth) veya Faz 2b (katalog uçları) — her ikisinde ekranlar hazır; EXPO_PUBLIC_MOCK_API=0 geçişi tek flag. Cihazda iOS/Android görsel doğrulaması makinede yapılmalı.
+
+---
+Task ID: 7
+Agent: Ana ajan (Z.ai)
+Task: FAZ-2 Testi (UI ve Görsel Kalite) — mobil arayüzün kalite kontrolü, hata bulma/düzeltme, kabul doğrulaması
+
+Work Log:
+- Git geçmişi okundu: son geliştirme fazı Faz 3a (mobil tasarım sistemi + 12 ekran); QA numaralandırmasında bu "FAZ 2: UI ve görsel kalite" kapsamı.
+- Gerçek komutlar bulundu ve koşuldu: kök typecheck/lint/test ✅ (97 test: contracts 16 + api 11 + mobile 70); admin next build ✅; embedded PG migrate/seed/verify ✅; API /health+/health/db 200 ✅; DB-down→503 ✅; EADDRINUSE dostu mesajı kazara canlı kanıtlandı.
+- UI test ortamı: cihaz/emülatör YOK → Expo web (react-native-web) + Playwright (390×844, gerçek tıklama/yazma). 23 ekran görüntüsü docs/qa/screenshots/ altına alındı.
+- BÜYÜK TEHLİKE KEŞFEDİLDİ: CI=1 Metro dosya değişikliklerini İZLEMİYOR → ilk 9 bisect deneyi bayat bundle'a karşı koşulmuştu; kural: her değişiklikte --clear ile yeniden başlat.
+- F2-01 Yüksek (web'de açılmama): expo-router 58.0.26 web'de kök layout'taki <Redirect> sonsuz render döngüsü (Maximum update depth ×400+, "Linking did not produce an initial navigation state"). Yama sürümü yok (58.0.26 en son). Düzeltme: kapı ekran düzeyine taşındı ((tabs)/index.tsx; gezgin mount iken güvenli desen). Sonra: döngü 0.
+- F2-02 Orta: CORS_ORIGINS'te Metro web portu 8081 yoktu (bayat 19006) → .env.example+.env düzeltildi; ACAO başlığı canlı kanıtlandı (8081 ve 3001 origin'leri).
+- F2-03 Orta (web): iç içe <button> geçersiz HTML — 3 kaynak (hero-banner, keşfet/kategori ızgaraları, Planım geçmiş satırı); LogBox toast'u tıklamaları engelliyordu. Düzeltme: dış kapsayıcılardan accessibilityRole kaldırıldı (iç semantik butonlar a11y'yi korur). Sonra: nested hata 4→0.
+- F2-04 Düşük: useContentDetail boş id ile bogus istek → enabled: contentId.length > 0.
+- Dürüst SKIP'ler: kilitli bölüm panelleri mock profilinde tasarım gereği görünmez (TRIALING + 260 kredi; sahte durum üretilmedi — karar player.tsx:86-94 + unit testler).
+- 33 adımlı UI koşusu: 31 PASS / 2 SKIP / 0 FAIL. Radius denetimi tüm ekranlarda yalnız 0/2/4px; 4 tema rengi tokens.ts'te birebir; oranlar 2:3, 9:16, 16:9. Native bundle (iOS+Android export) derlendi — regresyon yok. app.json deney mutasyonu geri alındı (git diff doğrulandı).
+- Rapor: docs/qa/FAZ-2-QA.md
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — sonraki faza geçiş onaylandı. Uyarılar: native cihaz doğrulaması bekliyor (safe area/klavye/çoklu ekran), kilitli paneller gerçek veri akışında test edilmeli, web kök zemini parlatma kalemi (F2-05).
+- Değişen dosyalar: apps/mobile (7 kaynak dosya), apps/api/.env.example; yeni: docs/qa/FAZ-2-QA.md, docs/qa/screenshots/ (23), scripts/qa-faz2-ui.py, scripts/qa-faz2-player-probe.py, scripts/qa-faz2-results.json.
+- Sonraki ajan için: UI testleri `scripts/qa-faz2-ui.py` ile yeniden koşulabilir (Metro'yu EXPO_PUBLIC_MOCK_API=1 ile 8081'de başlat; CI=1'de her değişiklik sonrası --clear ile RESTART şart). Expo-router v58 web'de kök-layout Redirect anti-pattern'dir — ekran düzeyi kullan.

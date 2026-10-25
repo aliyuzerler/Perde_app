@@ -60,9 +60,10 @@ export default function CategoryScreen() {
           </AppText>
           <View style={styles.grid}>
             {query.data.items.map((item) => (
+              // NOT: dış kapsayıcı role=button DEĞİL — PosterCard zaten kendi
+              // erişilebilir butonu; RNW'de iç içe <button> geçersiz HTML (FAZ-2 QA).
               <Pressable
                 key={item.contentId}
-                accessibilityRole="button"
                 onPress={() =>
                   router.push({
                     pathname: '/content/[id]',

@@ -8,6 +8,7 @@
  *  4) removeItem her iki katmanı da temizler.
  */
 import { jest, describe, expect, it, beforeEach } from '@jest/globals';
+import { Platform } from 'react-native';
 import { secureStorage } from '../secure-storage';
 
 const mockStore = new Map<string, string>();
@@ -60,5 +61,46 @@ describe('secure-storage', () => {
     await secureStorage.removeItem('anahtar');
     expect(mockDeleteItemAsync).toHaveBeenCalledWith('anahtar');
     await expect(secureStorage.getItem('anahtar')).resolves.toBeNull();
+  });
+
+  // F2C-01: web'de oturum kalıcılığı — localStorage gerçek deposudur.
+  describe('web platformu (F2C-01)', () => {
+    const ls = new Map<string, string>();
+    const localStorageMock = {
+      getItem: (k: string) => ls.get(k) ?? null,
+      setItem: (k: string, v: string) => ls.set(k, v),
+      removeItem: (k: string) => ls.delete(k),
+    } as unknown as Storage;
+
+    beforeEach(() => {
+      ls.clear();
+      (Platform as { OS: string }).OS = 'web';
+      (globalThis as { window?: unknown }).window = { localStorage: localStorageMock };
+    });
+
+    it('setItem localStorage\u2019a yazar; SecureStore çağrılmaz', async () => {
+      await secureStorage.setItem('perdego.auth.v2', '{"session":{}}');
+      expect(ls.get('perdego.auth.v2')).toBe('{"session":{}}');
+      expect(mockSetItemAsync).not.toHaveBeenCalled();
+    });
+
+    it('getItem localStorage\u2019dan okur (sayfa yenileme senaryosu)', async () => {
+      ls.set('perdego.auth.v2', '{"session":{"user":{"id":"u1"}}}');
+      await expect(secureStorage.getItem('perdego.auth.v2')).resolves.toBe(
+        '{"session":{"user":{"id":"u1"}}}'
+      );
+    });
+
+    it('removeItem localStorage kaydını temizler', async () => {
+      ls.set('perdego.auth.v2', 'x');
+      await secureStorage.removeItem('perdego.auth.v2');
+      expect(ls.has('perdego.auth.v2')).toBe(false);
+    });
+
+    it('localStorage yoksa (gizli pencere) bellek düşüşü değeri korur', async () => {
+      (globalThis as { window?: unknown }).window = {};
+      await secureStorage.setItem('k', 'v');
+      await expect(secureStorage.getItem('k')).resolves.toBe('v');
+    });
   });
 });

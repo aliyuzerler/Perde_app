@@ -13,7 +13,6 @@ import { useTitles } from '@/hooks/queries/use-titles';
 import { useNetworkStatus, isDefinitelyOffline } from '@/hooks/use-network';
 import { ScreenContainer } from '@/components/screen-container';
 import { AppText } from '@/components/ui/app-text';
-import { AppBadge } from '@/components/ui/app-badge';
 import { PosterCard } from '@/components/ui/poster-card';
 import { OfflineBanner } from '@/components/ui/offline-banner';
 import { LoadingView } from '@/components/state-views/loading-view';
@@ -59,13 +58,10 @@ export default function ExploreScreen() {
         imageUrl={item.posterUrl}
         accessType={item.accessType}
         isNew={item.isNew}
+        cornerBadgeLabel={
+          item.kind === 'SERIES' ? 'DİZİ' : item.kind === 'FILM' ? 'FİLM' : 'KISA FİLM'
+        }
       />
-      <View style={styles.gridBadge}>
-        <AppBadge
-          label={item.kind === 'SERIES' ? 'DİZİ' : item.kind === 'FILM' ? 'FİLM' : 'KISA FİLM'}
-          tone="neutral"
-        />
-      </View>
     </Pressable>
   );
 
@@ -217,11 +213,6 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
     },
     gridItem: {
       width: '31.5%',
-    },
-    gridBadge: {
-      position: 'absolute',
-      top: spacing[2],
-      right: spacing[2],
     },
     footer: {
       paddingVertical: spacing[3],

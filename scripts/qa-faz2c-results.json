@@ -1,0 +1,119 @@
+{
+  "generatedAt": "2026-10-25 19:56:23",
+  "base": "http://localhost:8081",
+  "api": "http://localhost:3000",
+  "mockApi": "0 (gerçek adapter)",
+  "results": [
+    {
+      "step": "00-api-boot",
+      "status": "PASS",
+      "detail": "API zaten çalışıyor"
+    },
+    {
+      "step": "01-onboarding",
+      "status": "PASS",
+      "detail": "onboarding kapısı göründü"
+    },
+    {
+      "step": "02-anasayfa-dinamik",
+      "status": "PASS",
+      "detail": "banner=True yeni-rayı=True — /home gerçek veriden"
+    },
+    {
+      "step": "02-hero-sec",
+      "status": "PASS",
+      "detail": "Öne Çıkan bölümü=True"
+    },
+    {
+      "step": "03-detay-sezon-bolum",
+      "status": "PASS",
+      "detail": "sezon listesi=True"
+    },
+    {
+      "step": "03-detay-erisim-etiketi",
+      "status": "PASS",
+      "detail": "erişim etiketi=True"
+    },
+    {
+      "step": "03-favori-ekle",
+      "status": "PASS",
+      "detail": "Planıma Ekle → Planımda"
+    },
+    {
+      "step": "04-kesfet-kategoriler",
+      "status": "PASS",
+      "detail": "kategori ızgarası gerçek veriden"
+    },
+    {
+      "step": "05-kategori-icerik",
+      "status": "PASS",
+      "detail": "Dram kategorisi açıldı, içerik=True"
+    },
+    {
+      "step": "06-arama-gercek",
+      "status": "PASS",
+      "detail": "'Gece' araması gerçek uçtan sonuç döndü"
+    },
+    {
+      "step": "06-arama-bos",
+      "status": "PASS",
+      "detail": "boş sonuç ekranı"
+    },
+    {
+      "step": "08-offline-ekrani",
+      "status": "PASS",
+      "detail": "ağ yok → hata/tekrar ekranı"
+    },
+    {
+      "step": "09-tekrar-dene",
+      "status": "PASS",
+      "detail": "Tekrar Dene ile kurtarma"
+    },
+    {
+      "step": "12-giris-gercek",
+      "status": "PASS",
+      "detail": "gerçek auth oturumu=member"
+    },
+    {
+      "step": "13-oturum-modu",
+      "status": "PASS",
+      "detail": "Planim ekranı oturum modunda (misafir bandı yok)"
+    },
+    {
+      "step": "13-favoriler-baslangic",
+      "status": "PASS",
+      "detail": "Favoriler segmenti görüntülendi"
+    },
+    {
+      "step": "14-devam-seed",
+      "status": "PASS",
+      "detail": "seed izleme kaydı göründü=True, pozisyon bilgisi=True"
+    },
+    {
+      "step": "15-gecmis-segmenti",
+      "status": "PASS",
+      "detail": "izleme geçmişi segmenti açıldı"
+    },
+    {
+      "step": "16-favori-sunucu-uctan-uca",
+      "status": "PASS",
+      "detail": "oturumda çıkar→ekle→listele: eklendi=True, listede=True, önceki kayıt=False"
+    },
+    {
+      "step": "16-temizlik",
+      "status": "PASS",
+      "detail": "test favorisi geri çıkarıldı"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  ],
+  "pass": 20,
+  "fail": 0,
+  "warn": 0
+}

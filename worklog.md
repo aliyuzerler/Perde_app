@@ -230,3 +230,26 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — giriş ve oturum yönetimi uçtan uca kanıtlandı; yetkisiz erişim engelli; hassas veriler korunuyor. Uyarılar dış bağımlılıklar + dokümante ödünler + F4-05 cilası.
 - Değişen dosyalar: apps/mobile/src/services/__tests__/secure-storage.test.ts (yeni, +4 test), scripts/qa-faz4-auth-probe.mjs (yeni), docs/qa/FAZ-4-QA.md (yeni).
 - Sonraki ajan için: Mailpit SMTP + gerçek cihaz doğrulaması Faz 5 öncesi; F4-05 rota kapısı (expo-router v58 Redirect döngüsü kuralına dikkat); probe yeniden koşumu için betik başlığındaki env tablosu esas alınmalı.
+
+---
+Task ID: 12
+Agent: Ana ajan (Z.ai)
+Task: Faz 2c — katalog deneyiminin gerçek backend verisiyle birleştirilmesi + tam doğrulama (11 mobil özellik, 6 backend gereksinim, arayüz kuralları)
+
+Work Log:
+- Önceki oturumun implementasyonu (commit 617a63e: admin banner/bölüm yönetimi, PROCESSING durumu, decideMany N+1 düzeltmesi, mobil ekranlar) doğrulama turu bekliyordu; bu oturumda tam doğrulama + 2 kusur düzeltmesi + raporlama yapıldı.
+- Statik: typecheck 4/4, lint 4/4. Testler: 286/286 (contracts 48, api 124 [faz2c katalog entegrasyonu 11 gerçek-PG], mobile 114).
+- KRİTİK ORTAM DERSİ: dist bayattı (17:51 build vs 18:37 kaynak) → canlı koşumda admin GET/PATCH/banner/bölüm uçları "Cannot GET" üretti, 13 sahte FAIL. `pnpm --filter @perdego/api build` sonrası düzeldi.
+- Canlı API probe yazıldı ve koşuldu: scripts/qa-faz2c-catalog-probe.mjs → 41/41 PASS (/home dinamik, sayfalama+filtreler, arama, accessSeasons, NEEDS_CREDITS, favoriler idempotent, continue/history, DRAFT→PROCESSING→PUBLISHED→ARCHIVED görünürlük matrisi, banner+bölüm CRUD→/home yansıması). Probe ilk 13 FAIL'İ zarf katmanı karışıklığından aldı: HTTP kodu error.code'da (NOT_FOUND/BAD_REQUEST), alan nedeni error.details.reason'da (CONTENT_NOT_FOUND/VALIDATION_FAILED).
+- Mobil gerçek-adapter E2E yazıldı ve koşuldu: scripts/qa-faz2c-ui-real-api.py (Expo web 390×844 + Playwright) → son koşum 20 PASS / 0 FAIL / 0 WARN. 20 ekran görüntüsü docs/qa/screenshots/faz2c/.
+- F2C-01 (YÜKSEK) canlı yakalandı: web'de oturum kalıcılığı YOKTU — secure-storage localStorage'a düşeceği iddia ediyordu ama kod yalnız bellek danışığına düşüyordu; sayfa yenilemesinde oturum kayboluyor, Planım "Misafir modu"na dönüyordu. Düzeltme: web'de gerçek localStorage yolu (SSR/kota güvenli); native SecureStore yolu değişmedi. +4 web-platform testi (mobile 108→114). Canlı kanıt: yenileme sonrası "Demo İzleyici" korunuyor, Planım sunucu verisini gösteriyor.
+- F2C-02 (Düşük) düzeltildi: keşfet ızgarasında tür rozeti (DİZI) ile erişim rozeti üst üste biniyordu → PosterCard'a cornerBadgeLabel sütun slotu, kaplama kaldırıldı, +2 test.
+- F2C-03 (Düşük, kabul): en dar 3 sütunlu ızgarada uzun rozet metni kırpılıyor ("Üyelere ö") — cila kalemi.
+- E2E seçici dersleri: AppButton DOM metnini tr-TR büyütür → get_by_label kullan; RN web'de sekme ekranları mount kalır → gizli ekran inputları .first'i çalar → input[type=...] veya doğrudan rota; rate limiter in-memory → probe öncesi API restart.
+- Görev maddeleri tek tek denetlendi: 11 mobil özellik + 6 backend gereksinim + arayüz kuralları (0/2/4 px radius, 2:3·9:16·16:9 oranlar, kart içeriği) — tümü kanıtlı.
+- Rapor: docs/phases/FAZ-2C.md; ROADMAP Faz 2 durumu ✅ 2c'ye güncellendi; anahtar ekran görüntüleri download/perdego-gercek-api-ekran-goruntuleri/ altına kopyalandı.
+
+Stage Summary:
+- Karar: PASS — katalog deneyimi gerçek backend verisiyle uçtan uca çalışıyor; içerik keşif sistemi admin banner/bölüm yönetimiyle büyütülebilir durumda.
+- Kritik ders: canlı doğrulamadan önce dist'i yeniden derle; doküman-kod uyuşmazlığı (localStorage iddiası) ancak canlı koşumda yakalanır.
+- Sonraki ajan için: Faz 5 (mağaza/ödeme uçları), Faz 6 (admin paneli UI'sı — yönetim uçları hazır), F2C-03 rozet kırpma cilası, native cihaz doğrulaması. Probe yeniden koşumu: API'yi restart et (rate limit) + dist güncel olsun.

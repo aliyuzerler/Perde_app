@@ -55,10 +55,13 @@
 3. Mobil uygulama mock yerine gerçek API'den feed çeker; `EXPO_PUBLIC_MOCK_API=0` ile.
 4. API tarafı için birim + e2e testleri yeşildir.
 
-**Durum**: 🚧 2a + 2b tamam — 21+ tabloluk PostgreSQL şeması, 13 NestJS
+**Durum**: ✅ 2a + 2b + 2c tamam — 21+ tabloluk PostgreSQL şeması, 13 NestJS
 modülü, Swagger, gerçek PostgreSQL entegrasyon testleri ve canlı smoke;
-mobil gerçek adapter geçişi kaldı (Faz 3b auth uçları hazır: `EXPO_PUBLIC_MOCK_API=0`
-ile katalog uçları bağlanır). Bkz. `docs/phases/FAZ-2.md`, `docs/phases/FAZ-2B.md`.
+**2c (katalog gerçek veri): mobil `EXPO_PUBLIC_MOCK_API=0` ile uçtan uca bağlandı** —
+/home dinamik (banner + HERO/RAIL/GRID bölüm yönetimi), sayfalı kategori/arama
+filtreleri, sunucu erişim etiketleri, favoriler + izleme geçmişi, offline
+tekrar-dene akışı; canlı probe 41/41, gerçek-API UI E2E 20/20, 286 test yeşil.
+Bkz. `docs/phases/FAZ-2.md`, `docs/phases/FAZ-2B.md`, `docs/phases/FAZ-2C.md`.
 
 ## Faz 3 — Kimlik Doğrulama ve Hesaplar
 

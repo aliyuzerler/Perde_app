@@ -31,6 +31,10 @@ export interface PosterCardProps {
   imageUrl?: string | null;
   accessType: AccessType;
   isNew?: boolean;
+  /** Sağ üstte erişim rozetinin ÜSTÜNDE ikinci rozet (örn. tür: DİZİ/FİLM).
+   * F2C-02: keşfet ızgarasındaki mutlak konumlu kaplama rozetleri erişim
+   * rozetiyle çakışıyordu — kart bileşenine taşındı (sütun düzeni). */
+  cornerBadgeLabel?: string;
   width?: number;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -43,6 +47,7 @@ export const PosterCard = memo(function PosterCard({
   imageUrl,
   accessType,
   isNew = false,
+  cornerBadgeLabel,
   width,
   onPress,
   style,
@@ -81,11 +86,17 @@ export const PosterCard = memo(function PosterCard({
         {/* Alt karartma gradyanı — metin okunabilirliği */}
         <View style={[StyleSheet.absoluteFill, styles.bottomScrim]} pointerEvents="none" />
 
-        {/* Rozetler */}
+        {/* Rozetler: sol üstte Yeni; sağ üstte (tür → erişim) sütunu.
+            Kaplama YOK — rozetler asla üst üste binmez (F2C-02). */}
         <View style={styles.badgeRow} pointerEvents="none">
           {isNew ? <AppBadge label={t('content.newBadge')} tone="accent" /> : <View />}
-          {access.showBadge ? (
-            <AppBadge label={t(`access.${access.labelKey}`)} tone="neutral" />
+          {cornerBadgeLabel || access.showBadge ? (
+            <View style={styles.badgeStack}>
+              {cornerBadgeLabel ? <AppBadge label={cornerBadgeLabel} tone="neutral" /> : null}
+              {access.showBadge ? (
+                <AppBadge label={t(`access.${access.labelKey}`)} tone="neutral" />
+              ) : null}
+            </View>
           ) : null}
         </View>
 
@@ -124,6 +135,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  badgeStack: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   titleWrap: {
     position: 'absolute',

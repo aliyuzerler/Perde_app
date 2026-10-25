@@ -94,4 +94,34 @@ describe('PosterCard', () => {
     );
     expect(queryByText('KS', { includeHiddenElements: true })).toBeNull();
   });
+
+  // F2C-02: tür rozeti kart içinde, erişim rozetinin üstünde — kaplama çakışması yok
+  it('cornerBadge ile tür rozetini erişim rozetinin üstünde gösterir', async () => {
+    const { getByText } = await render(
+      <PosterCard
+        title="Gece Yarısı Treni"
+        aspect="poster"
+        imageUrl={null}
+        accessType="SUBSCRIPTION"
+        isNew
+        cornerBadgeLabel="DİZİ"
+      />
+    );
+    expect(getByText('DİZİ')).toBeTruthy();
+    expect(getByText('Üyelere özel')).toBeTruthy();
+    expect(getByText('Yeni')).toBeTruthy();
+  });
+
+  it('cornerBadge verilmezse tür rozeti çizilmez', async () => {
+    const { queryByText } = await render(
+      <PosterCard
+        title="Yankı"
+        aspect="poster"
+        imageUrl={null}
+        accessType="FREE"
+      />
+    );
+    expect(queryByText('DİZİ')).toBeNull();
+    expect(queryByText('FİLM')).toBeNull();
+  });
 });

@@ -33,9 +33,17 @@ ile sınırlıdır.
   (`UNIQUE(platform, storeTransactionId)`, `UNIQUE(userId, episodeId)`,
   `UNIQUE(source, eventId)` vb.).
 - `20261025090000_full_domain` migration'ı (748 satır): Prisma'nın
-  modellemediği CHECK kısıtları (`credit_cost > 0`, bakiye ≥ 0, `delta ≠ 0`),
-  kısmi unique index'ler (tek READY medya, tek aktif plan, okunmamış
-  bildirim) ve `credit_ledger` için append-only yazma rolü SQL'e elle eklendi.
+  modellemediği CHECK kısıtları (`credit_cost > 0`, bakiye ≥ 0, `delta ≠ 0`)
+  ve kısmi unique index `episode_media_single_ready` (bölüm başına tek READY
+  medya) SQL'e elle eklendi.
+  _Faz 3 QA düzeltmesi (2026-10-25):_ bu bölümdeki "tek aktif plan ve
+  okunmamış bildirim kısmi unique index'leri ile append-only yazma rolü"
+  ifadeleri gerçeği yansıtmıyordu — bunlar migration'da yoktu. Tek aktif
+  abonelik kısıtı uygulama katmanındadır (family-key akışı; çapraz platform
+  senaryoları için bilinçli tercih) ve `credit_ledger` append-only garantisi
+  `20261025120000_ledger_append_only` migration'ıyla tetikleyici olarak
+  gerçekleştirildi (ERD rol tabanlı model superuser topolojisinde koruma
+  sağlamadığı için). Ayrıntı: `docs/qa/FAZ-3-QA.md` F3-02/F3-04.
 - **Temiz veritabanı doğrulaması:** entegrasyon testleri HER koşuda test
   veritabanını `DROP DATABASE (FORCE)` + `CREATE` + `prisma migrate deploy`
   + seed ile sıfırdan kurar; bu akış bu oturumda 5+ kez koşuldu.

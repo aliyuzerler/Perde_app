@@ -584,4 +584,41 @@ describe.skipIf(!dbAvailable)('Faz 2b — uçtan uca entegrasyon (gerçek Postgr
     expect(after.status).toBe(200);
     expect(after.body.data!.slug).toBe(slug);
   });
+
+  it('18 · credit_ledger append-only DB tetikleyicisi: finansal UPDATE/DELETE reddedilir, snapshot güncellemesi serbest (BR-04)', async () => {
+    const client = new Client({ connectionString: TEST_DB_URL });
+    await client.connect();
+    try {
+      const before = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM credit_ledger');
+      const target = await client.query<{ id: string }>('SELECT id FROM credit_ledger LIMIT 1');
+      expect(target.rows.length).toBe(1);
+      const id = target.rows[0]!.id;
+
+      // 1) Finansal alan güncellemesi reddedilir (delta değiştirilemez).
+      await expect(client.query(`UPDATE credit_ledger SET delta = delta + 1 WHERE id = $1`, [id])).rejects.toThrow(
+        /append-only.*finansal|finansal.*append-only|append-only/s,
+      );
+
+      // 2) type/purchasedDelta gibi öz kimlik alanları da değişemez
+      //    (kesin farklı değer: mevcut değerden bağımsız değişim yaratır).
+      await expect(
+        client.query(`UPDATE credit_ledger SET "purchasedDelta" = -777 WHERE id = $1`, [id]),
+      ).rejects.toThrow(/append-only/s);
+
+      // 3) Satır silme reddedilir.
+      await expect(client.query(`DELETE FROM credit_ledger WHERE id = $1`, [id])).rejects.toThrow(/append-only/s);
+
+      // 4) Bakiye snapshot alanları güncellenebilir (credits.service finalize deseni).
+      await client.query(
+        `UPDATE credit_ledger SET "balanceAfterPurchased" = "balanceAfterPurchased", "balanceAfterGranted" = "balanceAfterGranted" WHERE id = $1`,
+        [id],
+      );
+
+      // 5) Veri bütünlüğü: satır sayısı değişmedi, delta dokunulmadı.
+      const after = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM credit_ledger');
+      expect(after.rows[0]!.count).toBe(before.rows[0]!.count);
+    } finally {
+      await client.end();
+    }
+  });
 });

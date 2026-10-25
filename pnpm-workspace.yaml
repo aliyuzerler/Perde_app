@@ -19,3 +19,7 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   esbuild: true
+  # @scarf/scarf (swagger-ui-dist → @nestjs/swagger zinciri): telemetry
+  # postinstall'ı — çalıştırılmaz, açıkça reddedilir (pnpm 12'de belirsiz
+  # "ignored build" durumu hataya düşer; false = bilinçli ret kararı).
+  '@scarf/scarf': false

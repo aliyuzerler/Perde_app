@@ -167,3 +167,23 @@ Stage Summary:
 - Karar: PASS — Faz 2b kabul maddeleri (temiz DB migration, seed, 6 uç, sözleşme doğrulaması, birim+entegrasyon testleri, Swagger) kanıtlı.
 - Kritik ders: sabit Prisma filtre nesnesini spread ederken OR taşımak çağıranın OR'unu ezar — paylaşılan filtreler fonksiyon olmalı ve koşulları AND içine sarmalı.
 - Sonraki ajan için: mobil gerçek adapter geçişi (EXPO_PUBLIC_MOCK_API=0) Faz 3b/2c; gerçek mağaza doğrulaması Faz 5; gerçek HLS Faz 4 (imzalı manifest ucu köprü). Docker'lı makinede bir kez pnpm db:up → db:deploy → db:seed yeterli.
+
+---
+Task ID: 9
+Agent: Ana ajan (Z.ai)
+Task: FAZ 3 Testi (Database ve API) — Prisma şeması, migration'lar ve NestJS modüllerinin kalite kontrolü
+
+Work Log:
+- Son geliştirme fazı doğrulandı: Faz 2b (commit 027d328). Gerçek komutlar bulundu ve koşuldu.
+- Ortam geri yüklemeleri: embedded PG binary'leri scripts/qa-pg/package.json tanımlıyla kalıcı kuruldu (önceki --no-save prune dersinden); kök .env SQLite artığı platform tarafından geri akmıştı → Postgres URL yeniden uygulandı; pnpm 12 @scarf/scarf ignored-build hatası allowBuilds:false ile çözüldü.
+- F3-01 Yüksek: taze install'da .prisma/client stub kalıyordu (hoisted düzen) → API typecheck kırmızı. Düzeltme: kök postinstall db:generate. Sonra 4/4 yeşil.
+- F3-02 Orta: credit_ledger append-only DB'de YOKTU (ERD+rapor iddiasına rağmen) → yeni migration 20261025120000_ledger_append_only (finansal alan UPDATE reddi, DELETE/TRUNCATE koruması, balanceAfter* serbest). 4 canlı SQL senaryosu + entegrasyon test 18 ile kanıtlandı.
+- F3-03 Düşük: FAZ-2B raporundaki 3 kısmi index iddiasından 1'i gerçek → rapora düzeltme notu.
+- Testler: 188/188 (contracts 38 + api 80 [62 birim + 18 gerçek-PG entegrasyon] + mobile 70); typecheck/lint/build 4 workspace yeşil; smoke 13/13; genişletilmiş canlı probe 53/53 (scripts/qa-faz3-api-probe.mjs: sayfalama/filtre/arama, izolasyon, hata zarfı, Swagger 44 yol).
+- DB kanıtları: 3 migration temiz DB'lerde sıfırdan; 30 tablo/36 FK/51 unique index/8 CHECK envanteri; seed 2× idempotent; cüzdan=ledger sapması 0; negatif bakiye CHECK canlı reddi; cascade+RESTRICT içerik silmesi hatasız.
+- Rapor: docs/qa/FAZ-3-QA.md
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriterleri (temiz DB migration, sözleşme-kod uyumu, bütünlük ihlali engeli) gerçek kanıtla sağlandı; uyarılar dış bağımlılıklar (Docker/mağaza/HLS/push) ve docker PG'de ilk deploy gözlemi.
+- Değişen: apps/api/prisma/migrations/20261025120000_ledger_append_only (yeni), src/integration.faz2b.spec.ts (test 18), package.json (postinstall), pnpm-workspace.yaml, scripts/qa-pg/package.json, scripts/qa-faz3-{db-probe.sh,api-probe.mjs} (yeni), docs/phases/FAZ-2B.md (düzeltme notu), docs/qa/FAZ-3-QA.md (yeni), .env (yeniden).
+- Sonraki ajan için: Docker'lı makinede pnpm db:up → db:deploy → db:seed; taze checkout'ta pnpm install artık client'ı otomatik üretir (postinstall); mobil gerçek adapter geçişi (Faz 3b/2c) sıradaki geliştirme.

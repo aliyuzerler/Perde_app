@@ -52,7 +52,34 @@ async function bootstrap(): Promise<void> {
     app.enableCors({ origin: origins });
   }
 
-  await app.listen(env.PORT, '0.0.0.0');
+  // Port çakışması (EADDRINUSE) vb.: http sunucusunun 'error' olayı promise'e
+  // yansımadan süreci ham stack ile çökertir; dinleyiciyle dostu mesaj ver.
+  const reportListenError = (err: unknown): void => {
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code: unknown }).code)
+        : 'LISTEN_HATASI';
+    if (code === 'EADDRINUSE') {
+      console.error(
+        `[PerdeGo API] Port ${env.PORT} kullanımda (EADDRINUSE).`,
+        '\n  Çözüm: apps/api/.env içinde PORT değerini değiştirin veya portu kullanan süreci kapatın.',
+      );
+    } else {
+      console.error(
+        `[PerdeGo API] ${env.PORT} portunda dinlemeye geçilemedi (${code}):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    process.exit(1);
+  };
+  app.getHttpServer().once('error', reportListenError);
+
+  try {
+    await app.listen(env.PORT, '0.0.0.0');
+  } catch (error) {
+    await app.close().catch(() => undefined);
+    reportListenError(error);
+  }
   console.log(
     `[PerdeGo API] hazır: http://localhost:${env.PORT} (health: /health, db: /health/db, mod: ${env.NODE_ENV})`,
   );

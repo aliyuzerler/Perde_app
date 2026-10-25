@@ -45,3 +45,11 @@ Thumbs.db
 
 # Sistem klasoru (proje kodu degil)
 skills/
+
+# QA sandbox araçları (embedded PG verisi/indirilen ikililer depoya girmez)
+scripts/qa-pg/node_modules/
+scripts/qa-pg/pgdata/
+scripts/qa-pg/sock/
+scripts/qa-pg/*.log
+scripts/qa-pg/package-lock.json
+scripts/qa-pg/package.json

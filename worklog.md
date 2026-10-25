@@ -81,3 +81,24 @@ Stage Summary:
 - Üretilen: apps/api (16 dosya), apps/admin, docker-compose.yml, pnpm workspace düzeni, per-app env şablonları, doğrulanmış README, docs/phases/FAZ-2.md, ROADMAP Faz 2 = 🚧 2a tamam.
 - Kararlar: hoisted nodeLinker, allowBuilds (pnpm 12), bağımlılıksız env modülü, dürüst health uçları, şema alt küme (2b'de tam ERD).
 - Sonraki ajan için: Faz 2b = tam şema + içerik/feed/arama uçları + mobil gerçek adapter; ÖNCE Docker'lı makinede `pnpm db:migrate --name init` + `db:seed` koşulmalı; apps/api/.env şablonu hazır.
+
+---
+Task ID: 5
+Agent: Ana ajan (Z.ai)
+Task: FAZ 1 Testi (Proje Altyapısı) — kalite kontrol, test, kabul doğrulaması
+
+Work Log:
+- Son tamamlanan faz = Faz 2a (git log); kapsam buna göre doğrulandı.
+- Gerçek komutlar bulundu ve koşuldu: pnpm install --frozen-lockfile ✅, typecheck ✅ (4 ws), lint ✅, test ✅ 76/76 (contracts 16 + api 11 + mobile 49), build ✅ (nest+next).
+- Sandbox'ta Docker YOK → PostgreSQL 16.14 zonky embedded binary ile root'suz canlı kuruldu (scripts/qa-pg, compose paritesi perdego/perdego_dev_pass). Migration 20261025022857_init uygulandı, seed idempotent (2x), bağımsız sorgu ile veri kanıtı (3 kategori/2 içerik/3 bölüm).
+- Canlı API: /health 200 (version 0.1.0), /health/db 200 (gerçek PG, 3-22ms); DB down → 503 + gerçek hata; env yok → TR hata + exit 1; yanlış şemalı DATABASE_URL reddedildi; EADDRINUSE → dostu mesaj (düzeltme sonrası).
+- Admin: prod build + next start → 200 + başlık render; env uyarısı SSR'da görünür; hata durumu client bundle'da mevcut.
+- Mobil: expo export iOS (3.9MB) + Android (4.2MB) ✅; Metro açılış smoke ✅.
+- 6 bulgu düzeltildi: F-01 Yüksek (apps/admin/.env.example yoktu → oluşturuldu), F-02 Orta (ölü pnpm.onlyBuiltDependencies → kaldırıldı), F-03 Düşük (README 9→11 test), F-04 Düşük (README'ye doğrulanmış `pnpm db:migrate --name init`), F-05 Düşük (/health version package.json'dan), F-06 Düşük (EADDRINUSE dostu hata — http server 'error' dinleyicisi). Regresyon: typecheck/lint/test/build yeniden yeşil.
+- Çalıştırılamayanlar dürüst kaydedildi: Docker Compose kendisi, Redis, gerçek cihaz, Windows koşusu.
+- Rapor: docs/qa/FAZ-1-QA.md
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — sonraki faza (mobil görsel tasarım sistemi) geçiş onaylandı.
+- Değişen dosyalar: apps/admin/.env.example (yeni), apps/api/src/main.ts + health.controller.ts, package.json (kök), README.md, docs/qa/FAZ-1-QA.md (yeni).
+- Sonraki ajan için: Docker'lı makinede `pnpm db:up → db:migrate --name init → db:seed` bir kez koşulmalı; Redis Faz 2b+; scripts/qa-pg sandbox QA aracı (node_modules/pgdata git dışı).

@@ -50,9 +50,9 @@ pnpm dev:admin      # http://localhost:3001  (API sağlık kartları)
 pnpm dev:mobile     # Expo dev server — Expo Go ile QR okutun
 ```
 
-> **Migration notu:** İlk `pnpm db:migrate` çalıştırmasında Prisma bir migration
-> adı ister; `init` yazıp onaylayın (ya da `pnpm --filter @perdego/api exec prisma
-> migrate dev --name init`).
+> **Migration notu:** İlk migration'a bir ad verin: `pnpm db:migrate --name init`
+> (parametre iletimi doğrulanmıştır). Alternatif: `pnpm --filter @perdego/api exec
+> prisma migrate dev --name init`.
 
 ## Windows Kurulumu (PowerShell)
 
@@ -129,7 +129,7 @@ sorunlu her değişken için anlaşılır bir satır yazdırır:
 Aşağıdaki adımlar bu depoda **gerçekten çalıştırıldı** ve doğrulandı:
 
 - `pnpm install` — 3 workspace + kök, temiz kurulum
-- `pnpm typecheck`, `pnpm lint`, `pnpm test` — hepsi yeşil (contracts 16, mobile 49, api 9 test)
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` — hepsi yeşil (contracts 16, mobile 49, api 11 test)
 - `pnpm --filter @perdego/api run build` (nest build) ve `pnpm --filter @perdego/admin run build` (next build) — başarılı
 - `pnpm dev:api` karşılığı `node dist/main.js` ile canlı çalıştırma: `/health` → 200, `/health/db` (DB yokken) → **503 + açık hata**; env eksikken anlaşılır hata ve 1 koduyla çıkış
 - Mobil: `npx expo export --platform ios` — bundle derlemesi başarılı (pnpm düzeni ile)

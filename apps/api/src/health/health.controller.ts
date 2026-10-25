@@ -1,6 +1,13 @@
+import { createRequire } from 'node:module';
 import { Controller, Get, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { HealthService } from './health.service';
+
+/** /health yanıtındaki sürüm alanı — npm_package_version yalnızca paket
+ * yöneticisi script'iyle başlatınca tanımlıdır; doğrudan `node dist/main.js`
+ * ile de doğru sürüm raporlansın diye package.json'dan okunur. */
+export const API_VERSION: string =
+  createRequire(__filename)('../../package.json').version ?? '0.0.0';
 
 @Controller()
 export class HealthController {

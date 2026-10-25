@@ -24,3 +24,20 @@ Stage Summary:
 - Üretilen artefaktlar: monorepo kökü, packages/contracts, apps/mobile (4 sekme + detay), 3 doküman + faz raporu.
 - Kritik kararlar: npm workspaces, ContentApiPort adapter deseni, iki katmanlı mock koruması, özgün placeholder görseller, koyu tema tek yönlü, token korumalı tasarım kuralları.
 - Sonraki ajan için: Faz 2 = apps/api (NestJS + Prisma + PostgreSQL), içerik/feed/arama uçları, mobilde gerçek adapter geçişi. ROADMAP.md ve ARCHITECTURE.md okunmalı.
+
+---
+Task ID: 2
+Agent: Ana ajan (Z.ai)
+Task: PerdeGo ürün analizi ve teknik mimari dokümantasyonu (docs/ altına 7 belge)
+
+Work Log:
+- Mevcut depo incelendi: Faz 1 tamam (apps/mobile iskelet, packages/contracts, docs/ROADMAP+DESIGN+ARCHITECTURE v1). Kontratlar okundu: contentKind (FILM|SERIES|SHORT_FILM), accessType (FREE|SUBSCRIPTION|CREDIT), ApiEnvelope/hata kodları, ContentApiPort.
+- Resmi kaynaklardan fiyat/politika doğrulaması (2026-10-25): Cloudflare Stream (depolama $5/1.000dk/ay, teslim $1/1.000dk), Bunny Stream (depolama $0,01/GB/ay, teslim $0,005/GB, kodlama ücretsiz, ~$3,25–4,50 alt sınır), Mux (teslim ilk 100K dk ücretsiz, 1080p $0,001/dk; depolama 1080p $0,003/dk/ay), RevenueCat ($2.500 MTR'ye kadar ücretsiz, sonra %1), Apple SBP %15, Google servis bedeli (TR: abonelik %15, diğer ilk $1M %15/üzeri %30; ABD/AB yeni tablo izlenmeli).
+- Apple "satın alınan krediler süresiz" maddesi birincil kaynaktan doğrulanamadı → tasarımda güvenli taraf alındı (satın alınan kredi süresiz) ve Faz 6 checklist'ine hukuk teyidi eklendi.
+- 7 belge yazıldı: PRD.md (personalar, 20 senaryo/özellik, BR-01..13 iş kuralları, MVP içi/dışı + gerekçe/risk), ARCHITECTURE.md v2 (sistem bağlamı, modül haritası, video karşılaştırma + VideoProviderAdapter sözleşmesi, RevenueCat + sunucu-sahibi entitlement kararı, idempotent satın alma/unlock akışları, karar kaydı D1–D8), ERD.md (Mermaid ER + 21 tablo; append-only credit_ledger, episode_unlocks unique, webhook_events/idempotency_keys), API_CONTRACT.md (zarf + /api/v1 uçları + code/reason hata tablosu, contracts ile uyumlu), SECURITY.md (argon2id+RS256+rotasyon, imzalı video TTL 300sn, ödeme ters-sorgu/webhook, KVKK, OWASP API Top 10), COST_ESTIMATE.md (formüller + S/M/L senaryo tabloları; Bunny ~$0,11/1.000dk vs CF $1,00 vs Mux ~$0,89), RELEASE_PLAN.md (faz kabul kriterleri + faz kapanış teslim listesi + Apple/Google yayın checklist).
+- ROADMAP.md, DESIGN.md ve Faz 1 artefaktları bozulmadı; ARCHITECTURE.md v1 içeriği v2'ye korundu.
+
+Stage Summary:
+- docs/: PRD.md, ARCHITECTURE.md (v2), ERD.md, API_CONTRACT.md, SECURITY.md, COST_ESTIMATE.md, RELEASE_PLAN.md üretildi.
+- Kritik kararlar: Bunny Stream birincil video sağlayıcı (adapter ile CF ikinci impl.), RevenueCat (vendor çıkış yolu contract-test ile), satın alınan kredi süresiz / hediye kredi ayrı bakiye, ledger append-only + idempotency zorunlu.
+- Sonraki ajan için: Faz 2 = apps/api (NestJS+Prisma+PostgreSQL); ARCHITECTURE.md §4, ERD.md §3.2, API_CONTRACT.md §3 ve RELEASE_PLAN.md §3.2 okunmalı; EXPO_PUBLIC_MOCK_API=0 geçişi planlanmalı.

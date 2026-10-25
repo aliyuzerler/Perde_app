@@ -10,7 +10,7 @@ faz planı için `docs/ROADMAP.md` ve `docs/RELEASE_PLAN.md`.
 | Yol | Açıklama | Durum |
 |-----|----------|-------|
 | `apps/mobile` | React Native + Expo (SDK 58) + Expo Router mobil uygulama | ✅ Çalışır (mock veri ile) |
-| `apps/api` | NestJS REST API + Prisma + PostgreSQL (health uçları) | ✅ Çalışır |
+| `apps/api` | NestJS REST API + Prisma + PostgreSQL (tam alan modeli, 13 modül, Swagger) | ✅ Çalışır |
 | `apps/admin` | Next.js 16 + Tailwind 4 yönetim paneli (sağlık ekranı) | ✅ Çalışır |
 | `packages/contracts` | Paylaşılan Zod şemaları + TypeScript tipleri | ✅ |
 | `docs/` | Mimari, tasarım, QA ve faz raporları | ✅ |
@@ -41,18 +41,18 @@ cp apps/admin/.env.example apps/admin/.env.local
 pnpm db:up          # healthcheck'li; "healthy" olması için birkaç saniye bekleyin
 
 # 4) Veritabanı şeması + örnek veri
-pnpm db:migrate     # prisma migrate dev (ilk seferde 'init' migration'ı oluşturun)
+pnpm db:deploy      # mevcut migration'ları uygula (init + full_domain)
 pnpm db:seed        # özgün kurgu içerik (idempotent)
 
 # 5) Uygulamalar — her biri ayrı terminalde, bağımsız başlatılır
-pnpm dev:api        # http://localhost:3000  (health: /health, /health/db)
+pnpm dev:api        # http://localhost:3000  (Swagger: /api/docs, health: /health, /health/db)
 pnpm dev:admin      # http://localhost:3001  (API sağlık kartları)
 pnpm dev:mobile     # Expo dev server — Expo Go ile QR okutun
 ```
 
-> **Migration notu:** İlk migration'a bir ad verin: `pnpm db:migrate --name init`
-> (parametre iletimi doğrulanmıştır). Alternatif: `pnpm --filter @perdego/api exec
-> prisma migrate dev --name init`.
+> **Migration notu:** Depoda iki migration hazır (`init`, `full_domain`);
+> sıfırdan kurulumda `pnpm db:deploy` yeterlidir. Yeni migration üretmek
+> için: `pnpm db:migrate --name <ad>` (parametre iletimi doğrulanmıştır).
 
 ## Windows Kurulumu (PowerShell)
 
@@ -114,6 +114,23 @@ sorunlu her değişken için anlaşılır bir satır yazdırır:
   Çözüm: apps/api dizininde `cp .env.example .env` yapıp değerleri doldurun...
 ```
 
+## API (apps/api) — Hızlı Referans
+
+- **Swagger / OpenAPI:** `http://localhost:3000/api/docs` (JSON: `/api/docs-json`)
+- **Zarf:** her yanıt `{ ok: true, data }` ya da `{ ok: false, error: { code, message, details } }`
+- **Kimlik:** `Authorization: Bearer <accessToken>` (RS256, 15 dk); para/kredi
+  POST uçlarında `Idempotency-Key` zorunludur (BR-06)
+- **Demo hesaplar** (yalnızca seed):
+
+| E-posta | Şifre | Rol |
+|---------|-------|-----|
+| `admin@perdego.dev` | `Admin12345` | ADMIN |
+| `editor@perdego.dev` | `Admin12345` | EDITOR |
+| `viewer@perdego.dev` | `Dev12345` | USER (abone + kredi cüzdanı) |
+
+Seed verisi özgün kurgudur (telifli afiş/yapım yok); görseller API'nin kendi
+SVG placeholder'larıdır (`/placeholders/...`).
+
 ## Sorun Giderme
 
 | Sorun | Çözüm |
@@ -128,17 +145,17 @@ sorunlu her değişken için anlaşılır bir satır yazdırır:
 
 Aşağıdaki adımlar bu depoda **gerçekten çalıştırıldı** ve doğrulandı:
 
-- `pnpm install` — 3 workspace + kök, temiz kurulum
-- `pnpm typecheck`, `pnpm lint`, `pnpm test` — hepsi yeşil (contracts 16, mobile 49, api 11 test)
-- `pnpm --filter @perdego/api run build` (nest build) ve `pnpm --filter @perdego/admin run build` (next build) — başarılı
-- `pnpm dev:api` karşılığı `node dist/main.js` ile canlı çalıştırma: `/health` → 200, `/health/db` (DB yokken) → **503 + açık hata**; env eksikken anlaşılır hata ve 1 koduyla çıkış
+- `pnpm install` — workspace'ler, temiz kurulum
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` — yeşil (contracts 38, api 79, mobile 70 test; api testlerinin 17'si gerçek PostgreSQL üzerinde uçtan uca entegrasyondur)
+- `pnpm build` (nest + next) — başarılı
+- Temiz veritabanından sıfırdan `prisma migrate deploy` + seed: entegrasyon testleri her koşuda drop+create+deploy+seed yaparak kanıtlar; gömülü PostgreSQL ile canlı doğrulandı
+- Canlı smoke: `/health`, `/health/db`, `/api/docs`, `/api/v1/home`, `/api/v1/catalog/titles`, `/api/v1/catalog/titles/:slug`, `/api/v1/catalog/episodes/:id`, `/api/v1/search` — 13/13 kontrol yeşil (`scripts/qa-faz2b-smoke.sh`)
 - Mobil: `npx expo export --platform ios` — bundle derlemesi başarılı (pnpm düzeni ile)
 
-Sandbox'ta Docker bulunmadığı için **`pnpm db:up → db:migrate → db:seed`
-adımları bu ortamda canlı çalıştırılamadı**; komutlar ve compose dosyası
-hazırdır, Docker Desktop olan bir makinede (macOS/Linux/Windows) yukarıdaki
-adımlar izlenerek doğrulanmalıdır. DB'ye gerçek bağlantı kanıtı,
-`/health/db`'nin 200 dönmesiyle alınacaktır.
+Docker Compose'un kendisi sandbox'ta koşulamadı (Docker yok); PostgreSQL
+yerine gömülü PostgreSQL 16 binary'si (`scripts/qa-pg`) ile aynı şifre/rol
+paritesi kullanıldı. Docker'lı makinede `pnpm db:up → db:deploy → db:seed`
+adımları birebir çalışmalıdır.
 
 ## Dokümantasyon
 

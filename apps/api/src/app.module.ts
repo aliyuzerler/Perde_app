@@ -1,16 +1,24 @@
 /**
  * PerdeGo API kök modülü.
  *
- * Faz 2a (temel altyapı): yalnızca Env + Prisma + Health modülleri.
- * Katalog/users/billing vb. modüller Faz 2b+'da eklenir (Genel Kural 2:
- * faz kapsamı dışında özellik yazılmaz).
+ * Faz 2b: tam alan modeli — 13 iş modülü (Auth, Users, Catalog, Categories,
+ * Episodes, WatchProgress, Watchlist, Billing, Subscriptions, Credits, Media,
+ * Notifications, Admin) + altyapı (Env, Prisma, Health).
  */
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { EnvModule } from './config/env.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { JwtAuthGuard, RolesGuard } from './auth';
+import { API_MODULES } from './modules';
 
 @Module({
-  imports: [EnvModule, PrismaModule, HealthModule],
+  imports: [EnvModule, PrismaModule, HealthModule, ...API_MODULES],
+  providers: [
+    // Global guard sırası: önce kimlik, sonra rol.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
 })
 export class AppModule {}

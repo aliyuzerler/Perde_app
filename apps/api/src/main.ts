@@ -5,14 +5,18 @@
  *  1. Ortam değişkenleri Zod ile doğrulanır; hata varsa anlaşılır listeyle
  *     süreç 1 koduyla çıkar (sessiz yanlış yapılandırma yok).
  *  2. Nest uygulaması ayağa kalkar; /health ve /health/db prefix'siz,
- *     sürümlü uçlar /api/v1/* altındadır.
+ *     sürümlü uçlar /api/v1/* altındadır; Swagger /api/docs'ta.
+ *  3. Uygulama kablosajı (zarf, filtre, prefix, CORS, Swagger) bootstrap.ts
+ *     içinde merkeziydir — entegrasyon testleri birebir aynı yapıyı kullanır.
  */
 import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { loadDotenvFile } from './config/load-dotenv';
 import { loadEnv } from './config/env.schema';
+import { configureApp } from './bootstrap';
 
 async function bootstrap(): Promise<void> {
   // 0) Yerel .env yükle (varsa; gerçek ortam değişkenleri önceliklidir)
@@ -36,21 +40,11 @@ async function bootstrap(): Promise<void> {
   }
   const env = result.env!;
 
-  // 2) Uygulama
-  const app = await NestFactory.create(AppModule, { bufferLogs: false });
-
-  // Sürümükleme: sürümlü uçlar /api/v1 altında; altyapı sağlık uçları kökte.
-  app.setGlobalPrefix('api/v1', {
-    exclude: ['health', 'health/db'],
+  // 2) Uygulama + merkezi kablosaj
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: false,
   });
-
-  const origins = env.CORS_ORIGINS
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-  if (origins.length > 0) {
-    app.enableCors({ origin: origins });
-  }
+  configureApp(app, env);
 
   // Port çakışması (EADDRINUSE) vb.: http sunucusunun 'error' olayı promise'e
   // yansımadan süreci ham stack ile çökertir; dinleyiciyle dostu mesaj ver.
@@ -81,7 +75,7 @@ async function bootstrap(): Promise<void> {
     reportListenError(error);
   }
   console.log(
-    `[PerdeGo API] hazır: http://localhost:${env.PORT} (health: /health, db: /health/db, mod: ${env.NODE_ENV})`,
+    `[PerdeGo API] hazır: http://localhost:${env.PORT} (health: /health, db: /health/db, swagger: /api/docs, mod: ${env.NODE_ENV})`,
   );
 }
 

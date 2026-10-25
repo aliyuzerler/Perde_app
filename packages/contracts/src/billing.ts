@@ -67,7 +67,7 @@ export type CreditPacksResponse = z.infer<typeof creditPacksResponseSchema>;
 /** Cüzdan hareketi (mock görüntüleme; gerçek tablo credit_ledger'dır). */
 export const walletTransactionSchema = z.object({
   id: z.string().min(1),
-  kind: z.enum(['CREDIT_PURCHASE', 'EPISODE_UNLOCK', 'GRANT', 'REFUND']),
+  kind: z.enum(['CREDIT_PURCHASE', 'EPISODE_UNLOCK', 'GRANT', 'REFUND', 'ADJUSTMENT', 'EXPIRY']),
   amount: z.number().int(),
   balanceAfter: z.number().int().min(0),
   createdAt: z.string().min(1),

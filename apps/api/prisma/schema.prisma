@@ -1,9 +1,15 @@
-// PerdeGo — Prisma şeması (Faz 2a: temel altyapı alt kümesi)
+// PerdeGo — Tam veritabanı şeması (Faz 2b: tam alan modeli).
 //
-// Bu şema docs/ERD.md §3.2'nin katalog çekirdeğidir (Category/Content/
-// Episode). Kural: Faz 2a yalnızca altyapıdır; users, credit_ledger,
-// subscriptions vb. tam ERD genişlemesi Faz 2b (İçerik Hizmeti) ve sonrası
-// fazlarda ERD ile birebir eklenecektir. Alan adları ERD ile uyumludur.
+// Kaynak: docs/ERD.md §3 (kullanıcının varlık listesiyle birebir eşleşir;
+// tablo adı karşılıkları dosyanın sonundaki eşleme tablosunda).
+// Kurallar:
+//  - Kolon adları Faz 2a baseline'ı ile tutarlı Prisma varsayılanı (camelCase).
+//  - Kapalı kümeler PostgreSQL native enum; FK'lar ERD §1.6'daki gibi
+//    finansal/izleme verisinde RESTRICT, sahiplik ilişkilerinde CASCADE.
+//  - credit_ledger append-only dövmez: uygulamada yalnızca create;
+//    bakiyeler ledger toplamından hesaplanır (wallet = önbellek).
+//  - Prisma'nın modellemediği CHECK/partial index kısıtları migration
+//    SQL'ine elle eklenir (bkz. migrations/*_full_domain/migration.sql).
 
 generator client {
   provider = "prisma-client-js"
@@ -14,7 +20,251 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Kategori (ERD §3.2 categories)
+// ---------------------------------------------------------------------------
+// Enum'lar — alan adları ve enum değerleri ERD §3 + contracts ile tutarlıdır.
+// ---------------------------------------------------------------------------
+
+enum ContentKind {
+  FILM
+  SERIES
+  SHORT_FILM
+}
+
+enum SeriesFormat {
+  STANDARD
+  MINI
+}
+
+enum AccessType {
+  FREE
+  SUBSCRIPTION
+  CREDIT
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EpisodeStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CastRole {
+  ACTOR
+  DIRECTOR
+  WRITER
+}
+
+enum MediaProvider {
+  BUNNY
+  CLOUDFLARE
+  MUX
+}
+
+enum MediaState {
+  PROCESSING
+  READY
+  ERROR
+}
+
+enum UserRole {
+  USER
+  EDITOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum Locale {
+  tr
+  en
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+}
+
+enum BillingPeriod {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionPlatform {
+  IOS
+  ANDROID
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  GRACE_PERIOD
+  ON_HOLD
+  CANCELED
+  EXPIRED
+}
+
+enum StoreProductType {
+  SUBSCRIPTION
+  CREDIT_PACK
+}
+
+enum PurchaseState {
+  PENDING
+  PURCHASED
+  REFUNDED
+  REVOKED
+}
+
+enum LedgerType {
+  PURCHASE
+  GRANT
+  UNLOCK_SPEND
+  REFUND
+  ADJUSTMENT
+  EXPIRY
+}
+
+enum LedgerReferenceType {
+  STORE_TRANSACTION
+  EPISODE_UNLOCK
+  ADMIN_ADJUSTMENT
+  SUBSCRIPTION
+  EXPIRY_JOB
+  WEBHOOK
+}
+
+enum UnlockSource {
+  CREDIT
+  INCLUDED
+}
+
+enum WebhookSource {
+  APPLE
+  GOOGLE
+  REVENUECAT
+}
+
+enum WebhookState {
+  RECEIVED
+  PROCESSED
+  FAILED
+  SKIPPED
+}
+
+enum NotificationType {
+  NEW_EPISODE
+  NEW_CONTENT
+  PROMO
+  SYSTEM
+}
+
+enum HomeSectionType {
+  HERO
+  RAIL
+  CATEGORY_GRID
+}
+
+// ---------------------------------------------------------------------------
+// Kimlik ve cihaz (ERD §3.1)
+// ---------------------------------------------------------------------------
+
+/// Hesap kökü. Güvenli rol modeli: admin_users ayrı tablo yerine
+/// users.role (USER | EDITOR | ADMIN) + AuditLog denetimi (kullanıcı kararı).
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  /// argon2id hash; sosyal girişte null (P fazı).
+  passwordHash String?
+  displayName  String
+  avatarUrl    String?
+  locale       Locale     @default(tr)
+  role         UserRole   @default(USER)
+  status       UserStatus @default(ACTIVE)
+  /// 18+ içerik kontrolü (PRD §8).
+  birthYear    Int?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  /// BR-11 anonimleştirme mührü.
+  deletedAt    DateTime?
+
+  sessions               Session[]
+  devices                Device[]
+  subscriptions          Subscription[]
+  storeTransactions      StoreTransaction[]
+  creditWallet           CreditWallet?
+  creditLedger           CreditLedger[]
+  episodeUnlocks         EpisodeUnlock[]
+  watchHistory           WatchHistory[]
+  favorites              Favorite[]
+  playbackSessions       PlaybackSession[]
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  auditLogs              AuditLog[]
+  createdContents        Content[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// Push token kaydı (kullanıcı listesindeki notification_tokens).
+model Device {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     DevicePlatform
+  pushToken    String         @unique
+  appVersion   String?
+  locale       Locale         @default(tr)
+  lastActiveAt DateTime       @default(now())
+  createdAt    DateTime       @default(now())
+
+  sessions        Session[]
+  playbackSessions PlaybackSession[]
+
+  @@index([userId])
+  @@map("devices")
+}
+
+/// Refresh token rotasyonu ve geri çağırma (kullanıcı listesindeki
+/// refresh_sessions). Ham token DB'ye yazılmaz; SHA-256 hash tutulur.
+/// familyId: reuse-detection ailesi — bir token yeniden kullanılırsa tüm
+/// aile iptal edilir (SECURITY.md).
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId         String
+  refreshTokenHash String   @unique
+  deviceId         String?
+  device           Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  /// PII minimize: IP hash'li saklanır.
+  ipHash           String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  /// Rotasyonda yeni oturumun id'si (zincir denetimi).
+  replacedById     String?  @unique
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Katalog (ERD §3.2 + kullanıcının seasons / home_sections / banners talebi)
+// ---------------------------------------------------------------------------
+
 model Category {
   id        String   @id @default(cuid())
   slug      String   @unique
@@ -24,38 +274,60 @@ model Category {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  contents ContentCategory[]
+  contents      ContentCategory[]
+  homeSections  HomeSection[]
 
   @@map("categories")
 }
 
-/// İçerik kökü (ERD §3.2 contents — alt küme)
+/// İçerik kökü (kullanıcı listesindeki "titles"): FILM | SERIES | SHORT_FILM.
 model Content {
-  id            String    @id @default(cuid())
-  slug          String    @unique
-  kind          String // FILM | SERIES | SHORT_FILM
-  seriesFormat  String? // STANDARD | MINI (yalnızca SERIES)
-  titleTr       String
-  titleEn       String
-  originalTitle String?
-  synopsisTr    String
-  synopsisEn    String
-  releaseYear   Int
-  ageRating     String?
-  accessType    String    @default("FREE") // FREE | SUBSCRIPTION | CREDIT
-  status        String    @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
-  publishedAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                 String        @id @default(cuid())
+  slug               String        @unique
+  kind               ContentKind
+  /// Yalnızca SERIES için zorunlu (CHECK: kind=SERIES ⇒ seriesFormat NOT NULL).
+  seriesFormat       SeriesFormat?
+  titleTr            String
+  titleEn            String
+  originalTitle      String?
+  synopsisTr         String
+  synopsisEn         String
+  taglineTr          String?
+  taglineEn          String?
+  releaseYear        Int
+  /// 7+ | 13+ | 16+ | 18+
+  ageRating          String?
+  /// FILM ve SHORT_FILM için toplam süre.
+  durationSeconds    Int?
+  /// 2:3 afiş, 16:9 hero, 9:16 dikey önizleme.
+  posterUrl          String?
+  heroImageUrl       String?
+  verticalPreviewUrl String?
+  /// Bölüm bazlı erişimin varsayılanı (ERD: default_access_type).
+  accessType         AccessType    @default(FREE)
+  status             ContentStatus @default(DRAFT)
+  publishedAt        DateTime?
+  /// Admin denetimi (ERD created_by).
+  createdById        String?
+  createdBy          User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
-  categories ContentCategory[]
-  episodes   Episode[]
+  categories      ContentCategory[]
+  seasons         Season[]
+  episodes        Episode[]
+  castMembers     ContentCast[]
+  favorites       Favorite[]
+  homeSectionItems HomeSectionItem[]
+  banners         Banner[]
+  watchHistory    WatchHistory[]
 
-  @@index([status, publishedAt])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([kind])
   @@map("contents")
 }
 
-/// İçerik–kategori ilişkisi (ERD content_categories)
+/// İçerik–kategori ilişkisi (kullanıcı listesindeki title_categories).
 model ContentCategory {
   contentId  String
   categoryId String
@@ -67,24 +339,481 @@ model ContentCategory {
   @@map("content_categories")
 }
 
-/// Bölüm (ERD §3.2 episodes — alt küme)
-model Episode {
-  id              String    @id @default(cuid())
-  contentId       String
-  seasonNumber    Int
-  episodeNumber   Int
-  titleTr         String
-  titleEn         String
-  durationSeconds Int
-  accessType      String    @default("FREE") // FREE | SUBSCRIPTION | CREDIT
-  creditCost      Int?
-  status          String    @default("DRAFT") // DRAFT | SCHEDULED | PUBLISHED | ARCHIVED
-  publishedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+/// Sezon (kullanıcı listesindeki "seasons"); ERD'de season_number bölümde
+/// gömülüydü, kullanıcı talebiyle ayrı tablo + bileşik FK olarak kuruldu:
+/// bölümün seasons satırı olmadan var olamaması DB düzeyinde garanti edilir.
+model Season {
+  id           String   @id @default(cuid())
+  contentId    String
+  content      Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  seasonNumber Int
+  titleTr      String?
+  titleEn      String?
+  synopsisTr   String?
+  synopsisEn   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([contentId, seasonNumber])
+  @@map("seasons")
+}
+
+/// Bölüm. (contentId, seasonNumber) bileşik FK → seasons.
+model Episode {
+  id                 String        @id @default(cuid())
+  contentId          String
+  content            Content       @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  seasonNumber       Int
+  episodeNumber      Int
+  titleTr            String
+  titleEn            String
+  synopsisTr         String?
+  synopsisEn         String?
+  durationSeconds    Int
+  /// 9:16 dikey önizleme.
+  verticalPreviewUrl String?
+  accessType         AccessType    @default(FREE)
+  /// accessType=CREDIT ise zorunlu ve > 0 (CHECK).
+  creditCost         Int?
+  status             EpisodeStatus @default(DRAFT)
+  publishedAt        DateTime?
+  /// "önce ücretsiz" kampanya alanı — MVP'de kullanılmaz (ERD §3.2 notu).
+  freeUntilAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  season           Season           @relation(fields: [contentId, seasonNumber], references: [contentId, seasonNumber])
+  media            EpisodeMedia[]
+  unlocks          EpisodeUnlock[]
+  watchHistory     WatchHistory[]
+  playbackSessions PlaybackSession[]
 
   @@unique([contentId, seasonNumber, episodeNumber])
+  @@index([status, publishedAt])
   @@map("episodes")
+}
+
+/// Kadro üyesi (ROADMAP Faz 2 + contracts castMemberSchema).
+model CastMember {
+  id            String    @id @default(cuid())
+  fullName      String
+  role          CastRole
+  characterName String?
+  createdAt     DateTime  @default(now())
+
+  contents ContentCast[]
+
+  @@index([fullName])
+  @@map("cast_members")
+}
+
+model ContentCast {
+  contentId    String
+  castMemberId String
+  sortOrder    Int      @default(0)
+
+  content     Content    @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  castMember  CastMember @relation(fields: [castMemberId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, castMemberId])
+  @@map("content_cast")
+}
+
+/// Sağlayıcı asset kaydı (kullanıcı listesindeki media_assets; D5 sağlayıcı
+/// bağımsızlığı). Aynı bölümde tek READY: kısmi unique index (migration).
+model EpisodeMedia {
+  id              String        @id @default(cuid())
+  episodeId       String
+  episode         Episode       @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  provider        MediaProvider
+  providerAssetId String
+  state           MediaState    @default(PROCESSING)
+  durationSeconds Int?
+  errorMessage    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([episodeId, state])
+  @@unique([episodeId, provider, providerAssetId])
+  @@map("episode_media")
+}
+
+// ---------------------------------------------------------------------------
+// Ana sayfa düzeni (kullanıcı listesindeki home_sections + banners)
+// ---------------------------------------------------------------------------
+
+model HomeSection {
+  id           String          @id @default(cuid())
+  /// Benzersiz anahtar (örn. "hero", "yeni-eklenenler").
+  key          String          @unique
+  sectionType  HomeSectionType
+  titleTr      String?
+  titleEn      String?
+  /// CATEGORY_GRID/RAIL için dinamik kategori filtresi.
+  categoryId   String?
+  category     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  contentLimit Int             @default(10)
+  sortOrder    Int             @default(0)
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  items HomeSectionItem[]
+
+  @@index([isActive, sortOrder])
+  @@map("home_sections")
+}
+
+model HomeSectionItem {
+  id         String   @id @default(cuid())
+  sectionId  String
+  section    HomeSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  contentId  String
+  content    Content     @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  sortOrder  Int      @default(0)
+
+  @@unique([sectionId, contentId])
+  @@index([contentId])
+  @@map("home_section_items")
+}
+
+model Banner {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  titleTr        String?
+  titleEn        String?
+  subtitleTr     String?
+  subtitleEn     String?
+  imageUrl       String
+  targetContentId String?
+  targetContent  Content?  @relation(fields: [targetContentId], references: [id], onDelete: SetNull)
+  deepLink       String?
+  sortOrder      Int       @default(0)
+  isActive       Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("banners")
+}
+
+// ---------------------------------------------------------------------------
+// İzleme ve favoriler (ERD §3.3; watch_progress → watch_history,
+// watchlist → favorites)
+// ---------------------------------------------------------------------------
+
+model WatchHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId       String
+  episode         Episode  @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  /// Denormalize — "devam et" rayı sorgu hızlandırma (ERD).
+  contentId       String
+  content         Content  @relation(fields: [contentId], references: [id], onDelete: Restrict)
+  positionSeconds Int      @default(0)
+  completed       Boolean  @default(false)
+  lastWatchedAt   DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, episodeId])
+  @@index([userId, lastWatchedAt(sort: Desc)])
+  @@map("watch_history")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentId String
+  content   Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, contentId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("favorites")
+}
+
+/// Aktif oynatma oturumu (SECURITY §4): imzalı URL sahipliği + paralel
+/// oynatma limiti (≤ 2) burada sayılır. Süresi geçenler günlük temizlenir.
+model PlaybackSession {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodeId  String
+  episode    Episode   @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  deviceId   String?
+  device     Device?   @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  issuedAt   DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastSeenAt DateTime?
+
+  @@index([userId, issuedAt(sort: Desc)])
+  @@index([episodeId, issuedAt(sort: Desc)])
+  @@map("playback_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Monetizasyon (ERD §3.4; subscription_products → plans,
+// subscription_status → subscriptions, credit_packages → credit_packs,
+// purchase_transactions → store_transactions)
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id                      String        @id @default(cuid())
+  /// SUB_MONTHLY | SUB_YEARLY
+  code                    String        @unique
+  titleTr                 String
+  titleEn                 String
+  platformProductIdIos    String?
+  platformProductIdAndroid String?
+  billingPeriod           BillingPeriod
+  /// Kuruş cinsinden (contracts priceKurus ile uyumlu; 4990 = ₺49,90).
+  priceKurus              Int
+  currency                String        @default("TRY")
+  trialDays               Int           @default(0)
+  gracePeriodDays         Int           @default(16)
+  isActive                Boolean       @default(true)
+  sortOrder               Int           @default(0)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isActive, billingPeriod])
+  @@map("plans")
+}
+
+/// Kullanıcı abonelik durum makinesi (kullanıcı listesindeki
+/// subscription_status). BR-02: erişim kararı currentPeriodEnd + status.
+model Subscription {
+  id                        String               @id @default(cuid())
+  userId                    String
+  user                      User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  planId                    String
+  plan                      Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  platform                  SubscriptionPlatform
+  status                    SubscriptionStatus   @default(TRIALING)
+  autoRenew                 Boolean              @default(true)
+  currentPeriodStart        DateTime?
+  currentPeriodEnd          DateTime?
+  storeOriginalTransactionId String?
+  productId                 String?
+  canceledAt                DateTime?
+  expiresAt                 DateTime?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  @@index([userId, status])
+  @@index([storeOriginalTransactionId])
+  @@map("subscriptions")
+}
+
+model CreditPack {
+  id                       String   @id @default(cuid())
+  /// PACK_10 | PACK_25 | PACK_60
+  code                     String   @unique
+  credits                  Int
+  bonusCredits             Int      @default(0)
+  platformProductIdIos     String?
+  platformProductIdAndroid String?
+  priceKurus               Int
+  currency                 String   @default("TRY")
+  isActive                 Boolean  @default(true)
+  sortOrder                Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("credit_packs")
+}
+
+/// Ledger'dan türetilen önbellek — TEK DOĞRU credit_ledger'dır (Kural 1:
+/// cüzdan ledger kayıtlarından hesaplanabilmelidir). Satır SELECT ... FOR
+/// UPDATE ile kilitlenir (ARCHITECTURE §4). CHECK: bakiyeler >= 0 (migration).
+model CreditWallet {
+  userId           String   @id
+  user             User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  purchasedBalance Int      @default(0)
+  grantedBalance   Int      @default(0)
+  updatedAt        DateTime @updatedAt
+  @@map("credit_wallets")
+}
+
+/// Append-only dövmez (BR-04). UPDATE/DELETE yoktur; bakiye bileşenleri
+/// purchased/granted ayrı taşınır (BR-05/D7). balance_after_* yazım anındaki
+/// bakiyeyi denetim amaçlı saklar. idempotencyKey UNIQUE (BR-06).
+model CreditLedger {
+  id                    String              @id @default(cuid())
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type                  LedgerType
+  /// İmzalı toplam; CHECK: delta <> 0 (migration).
+  delta                 Int
+  purchasedDelta        Int                 @default(0)
+  grantedDelta          Int                 @default(0)
+  balanceAfterPurchased Int
+  balanceAfterGranted   Int
+  referenceType         LedgerReferenceType
+  referenceId           String?
+  /// BR-06: aynı anahtarla ikinci INSERT imkânsız.
+  idempotencyKey        String?             @unique
+  /// Yalnızca GRANT (hediye kredi); satın alınanda NULL.
+  expiresAt             DateTime?
+  note                  String?
+  createdAt             DateTime            @default(now())
+
+  unlocks EpisodeUnlock[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([type, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("credit_ledger")
+}
+
+/// Kalıcı bölüm açma hakkı (BR-03). UNIQUE(user_id, episode_id) — ikinci kez
+/// ücretlendirme DB düzeyinde imkânsız (Kural 3).
+model EpisodeUnlock {
+  id                 String         @id @default(cuid())
+  userId             String
+  user               User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  episodeId          String
+  episode            Episode        @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  source             UnlockSource
+  /// source=CREDIT ise zorunlu (CHECK benzeri doğrulama servis katmanında).
+  creditLedgerId     String?
+  creditLedger       CreditLedger?  @relation(fields: [creditLedgerId], references: [id], onDelete: Restrict)
+  /// INCLUDED (abonelik daveti) kaynaklıysa mağaza işlemi bağlanabilir.
+  storeTransactionId String?
+  storeTransaction   StoreTransaction? @relation(fields: [storeTransactionId], references: [id], onDelete: SetNull)
+  createdAt          DateTime       @default(now())
+
+  @@unique([userId, episodeId])
+  @@index([userId, createdAt])
+  @@index([episodeId])
+  @@map("episode_unlocks")
+}
+
+/// Tüm mağaza işlemleri — Kural 2'nin temeli:
+/// UNIQUE(platform, store_transaction_id) ile aynı dış satın alma kimliği
+/// iki kez işlenemez.
+model StoreTransaction {
+  id                        String            @id @default(cuid())
+  userId                    String?
+  user                      User?             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  platform                  SubscriptionPlatform
+  productType               StoreProductType
+  productId                 String
+  storeTransactionId        String
+  storeOriginalTransactionId String?
+  /// Android purchase token.
+  purchaseToken             String?
+  quantity                  Int               @default(1)
+  priceKurus                Int?
+  currency                  String?
+  purchaseState             PurchaseState     @default(PURCHASED)
+  validatedAt               DateTime?
+  refundedAt                DateTime?
+  rawPayload                Json?
+  createdAt                 DateTime          @default(now())
+
+  unlocks EpisodeUnlock[]
+
+  @@unique([platform, storeTransactionId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("store_transactions")
+}
+
+/// Ham mağaza olayları (kullanıcı listesindeki billing_events) — Kural 7:
+/// idempotent işleme girdisi. UNIQUE(source, event_id).
+model WebhookEvent {
+  id             String        @id @default(cuid())
+  source         WebhookSource
+  eventType      String
+  eventId        String
+  signatureValid Boolean       @default(false)
+  payload        Json?
+  state          WebhookState  @default(RECEIVED)
+  errorMessage   String?
+  receivedAt     DateTime      @default(now())
+  processedAt    DateTime?
+
+  @@unique([source, eventId])
+  @@index([state, receivedAt])
+  @@map("webhook_events")
+}
+
+/// Genel istek idempotensi (BR-06): para/kredi hareketli POST uçlarında
+/// Idempotency-Key header'ı; aynı anahtar aynı yanıtı döner, ikinci yazım yok.
+model IdempotencyKey {
+  scope         String
+  key           String
+  userId        String?
+  endpoint      String
+  requestHash   String
+  responseStatus Int?
+  responseBody  Json?
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+
+  @@id([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Bildirim ve operasyon (ERD §3.5; notification_tokens → devices)
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  titleTr    String
+  titleEn    String
+  bodyTr     String
+  bodyEn     String
+  /// Deep-link verisi.
+  dataJson   Json?
+  pushSentAt DateTime?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newEpisode Boolean  @default(true)
+  newContent Boolean  @default(true)
+  promo      Boolean  @default(true)
+  /// Salt okunur true (ERD).
+  system     Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+  @@map("notification_preferences")
+}
+
+/// Admin eylem denetimi (kredi düzeltmesi dahil; F-54).
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  action      String
+  entityType  String
+  entityId    String
+  beforeJson  Json?
+  afterJson   Json?
+  ipHash      String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }

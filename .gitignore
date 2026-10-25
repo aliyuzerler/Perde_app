@@ -53,3 +53,7 @@ scripts/qa-pg/sock/
 scripts/qa-pg/*.log
 scripts/qa-pg/package-lock.json
 scripts/qa-pg/package.json
+
+# Oturum çalışma artefaktları (ara çıktılar depoya girmez)
+logs/
+tool-results/

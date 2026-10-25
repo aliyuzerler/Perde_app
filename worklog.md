@@ -149,3 +149,21 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — sonraki faza geçiş onaylandı. Uyarılar: native cihaz doğrulaması bekliyor (safe area/klavye/çoklu ekran), kilitli paneller gerçek veri akışında test edilmeli, web kök zemini parlatma kalemi (F2-05).
 - Değişen dosyalar: apps/mobile (7 kaynak dosya), apps/api/.env.example; yeni: docs/qa/FAZ-2-QA.md, docs/qa/screenshots/ (23), scripts/qa-faz2-ui.py, scripts/qa-faz2-player-probe.py, scripts/qa-faz2-results.json.
 - Sonraki ajan için: UI testleri `scripts/qa-faz2-ui.py` ile yeniden koşulabilir (Metro'yu EXPO_PUBLIC_MOCK_API=1 ile 8081'de başlat; CI=1'de her değişiklik sonrası --clear ile RESTART şart). Expo-router v58 web'de kök-layout Redirect anti-pattern'dir — ekran düzeyi kullan.
+
+---
+Task ID: 8
+Agent: Ana ajan (Z.ai)
+Task: Faz 2b — tam PostgreSQL şeması, Prisma migration ve NestJS backend servisleri + tam doğrulama
+
+Work Log:
+- Kırık oturumdan devam: implementasyon önceki oturumda commit'lenmişti (ea5ffc1; UUID başlıklı) ama doğrulama turu koşulmamıştı. Bu oturum: ortam doğrulaması + tam doğrulama + 5 gerçek kusur düzeltmesi + raporlama.
+- Bulunan ve düzeltilen kusurlar: (1) KRİTİK publishedContentFilter spread'i çağıranın OR[id/slug] koşulunu ezüyor + new Date() modül-yükleme anında bayat → filtreler fonksiyona çevrildi, publishedAt AND içine sarıldı, 6 kullanım noktası güncellendi; (2) ZodValidationPipe BadRequestException fırlatıp VALIDATION_FAILED reason'unu kaybediyordu → ZodError doğrudan fırlatılır (parseQuery dahil); (3) playbackUrl PUBLIC_BASE_URL'e sabitti → requestOrigin ile yanıt veren sunucuyu işaret eder; (4) entegrasyon spec tip hataları (CJS'te üst düzey await, uzantısız import, PUT eksik) → senkron spawnSync probe + .js uzantıları; (5) kök .env SQLite scaffold artığı → Postgres URL ile hizalandı. Port 3000'deki bayat API süreci öldürüldü.
+- Test düzeltmeleri: test 14 sözleşme alan adları (satın alma yanıtı wallet.purchased — payments.ts; cüzdan ucu purchasedCredits — billing.ts), test 16 açık SUBSCRIPTION bölüm seçimi + paralel limit 3. oturumda 409.
+- GERÇEK DOĞRULAMA: typecheck/lint 4 workspace yeşil; testler 187/187 (contracts 38 + api 79 [62 birim + 17 gerçek-PG entegrasyon] + mobile 70); nest+next build başarılı; entegrasyon beforeAll her koşuda DROP+CREATE+migrate deploy+seed (temiz DB kanıtı, 5+ koşu); dev DB migrate status güncel + idempotent seed; canlı smoke scripts/qa-faz2b-smoke.sh 13/13 (health, Swagger, 6 zorunlu uç, hata zarfı, doğrulama alanları).
+- 7 iş kuralı entegrasyon testlerinde kanıtlandı (ledger=cüzdan SQL denklemi, dış tx idempotensi, tekrar unlock ücretsiz, tek transaction çekim+hak, üçlü erişim ayrımı, yayın/taslak, webhook SKIPPED).
+- Üretilen/güncellenen: docs/phases/FAZ-2B.md (rapor), ROADMAP Faz 2 durum satırı, README (API hızlı referans + demo hesaplar + güncel doğrulama bölümü), scripts/qa-faz2b-smoke.sh + qa yardımcı probe scriptleri.
+
+Stage Summary:
+- Karar: PASS — Faz 2b kabul maddeleri (temiz DB migration, seed, 6 uç, sözleşme doğrulaması, birim+entegrasyon testleri, Swagger) kanıtlı.
+- Kritik ders: sabit Prisma filtre nesnesini spread ederken OR taşımak çağıranın OR'unu ezar — paylaşılan filtreler fonksiyon olmalı ve koşulları AND içine sarmalı.
+- Sonraki ajan için: mobil gerçek adapter geçişi (EXPO_PUBLIC_MOCK_API=0) Faz 3b/2c; gerçek mağaza doğrulaması Faz 5; gerçek HLS Faz 4 (imzalı manifest ucu köprü). Docker'lı makinede bir kez pnpm db:up → db:deploy → db:seed yeterli.

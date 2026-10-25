@@ -55,6 +55,12 @@
 3. Mobil uygulama mock yerine gerçek API'den feed çeker; `EXPO_PUBLIC_MOCK_API=0` ile.
 4. API tarafı için birim + e2e testleri yeşildir.
 
+**Durum**: 🚧 2a (altyapı) + 2b (tam şema + içerik/alan uçları) tamam — 21+
+tabloluk PostgreSQL şeması, 13 NestJS modülü, Swagger, gerçek PostgreSQL
+üzerinde 17 uçtan uca entegrasyon testi ve canlı smoke doğrulaması; mobil
+adapter geçişi (2c / Faz 3b) kaldı. Bkz. `docs/phases/FAZ-2.md` ve
+`docs/phases/FAZ-2B.md`.
+
 ## Faz 3 — Kimlik Doğrulama ve Hesaplar
 
 **Kapsam**: kayıt/giriş (e-posta), JWT access/refresh rotasyonu, cihaz oturumları,

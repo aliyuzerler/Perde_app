@@ -158,6 +158,12 @@ Developer API üzerinden yapılır (BR-07); `store_transactions`
 alreadyProcessed=true` (idempotent davranış, hata değil). Doğrulama
 başarısızsa `402 PAYMENT_REQUIRED` + `reason: STORE_VALIDATION_FAILED`.
 
+**Restore akışı:** Mağaza geri yükleme (StoreKit restore / Play Billing
+`queryPurchases`, RevenueCat `restorePurchases`) istemcide tetiklenir ve
+sonucu **aynı** `POST /billing/purchases/validate` ucuyla sunucuda idempotent
+doğrulanır — ayrı bir restore ucu tanımlanmaz (BR-06; RELEASE_PLAN §4.1
+Apple checklist gereksinimi bu akışla karşılanır).
+
 ## 6. Kredi Cüzdanı ve Bölüm Açma (Faz 5)
 
 | Yöntem ve yol | Özet | Kimlik |

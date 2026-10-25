@@ -20,6 +20,29 @@
 | 6 | Admin paneli | ⏳ | §3.6 |
 | 7 | Bildirimler, sertleştirme ve mağaza yayınlama | ⏳ | §3.7 + §4 |
 
+> **Numaralandırma notu:** Faz 0, kurucu ürün/mimari dokümantasyonunu
+> gösterir ve kronolojik olarak Faz 1'in (mobil iskelet) ardından hazırlandı.
+> `ROADMAP.md`'deki Faz 1–7 planı geçerlidir; Faz 0 ek bir temel aşamadır.
+
+## 1.1 Zaman Varsayımları (kesin vaat değildir)
+
+Aşağıdaki süreler **açık varsayımdır**; taahhüt takvimi değildir. Temel
+varsayım: çekirdek ekip = 1 backend + 1 mobil + %50 zamanlı ürün/tasarım
+desteği; içerik arzı (lisans/üretim) paralel yürütülür.
+
+| Faz | Varsayılan süre | Belirleyici belirsizlik |
+|-----|-----------------|--------------------------|
+| Faz 2 (API temeli) | 3–5 hafta | Docker/yönetilen DB seçimi; arama ayarları |
+| Faz 3 (Auth) | 2–3 hafta | E-posta sağlayıcı kurulumu |
+| Faz 4 (Video) | 3–4 hafta | Bunny hesap onayı + gerçek içerik medyası |
+| Faz 5 (Monetizasyon) | 4–6 hafta | Mağaza ürün onayları, sandbox erişimi, RC entegrasyonu |
+| Faz 6 (Admin) | 3–4 hafta | Yükleme iş akışı detayları |
+| Faz 7 (Bildirim + yayın) | 2–3 hafta + **mağaza inceleme bekleme 1–4 hafta** | İnceleme turu sayısı |
+| **MVP toplam** | **~4–6 ay geliştirme + inceleme** | İçerik arzı ve mağaza onay süresi |
+
+Süre değişimleri bu tabloya işlenir; her faz raporu tahmini/gerçek süreyi
+bildirir (kalıcı vaat olarak sunulmaz).
+
 ## 2. Faz 0 — Dokümantasyon Kabul Kriterleri (bu faz)
 
 1. Yedi belge `docs/` altında tamamlandı ve çapraz referansları tutarlı
@@ -132,7 +155,8 @@ edilir; feed önbelleği gereksiz karmaşa → Redis yalnızca gerekçeli açıl
 ### 3.7 Faz 7 — Bildirimler, sertleştirme ve yayınlama
 
 1. Push izin akışı + token kaydı; favori dizilere yeni bölüm bildirimi
-   uçtan uca (yayın → webhook yok, admin publish → job → APNs/FCM teslim).
+   uçtan uca (bölüm yayını mağaza webhook'u gerektirmez: admin publish →
+   kuyruk job'ı → APNs/FCM teslimi).
 2. Performans: feed p95 < 400 ms (M senaryosu sahte yükte), oynatma
    başlangıcı p95 < 2,5 sn.
 3. Güvenlik kontrol listesi (`SECURITY.md` §10) eksiksiz işaretli; penetrasyon

@@ -72,7 +72,7 @@ karışım varsayımıyla **$0,0009/dk**. 4K ağırlığı artarsa oran yükseli
 | Mux depolama | $15 | $36 | $75 |
 | **Mux toplam** | **~$600** | **~$6.696** | **~$26.985** |
 
-**Özet birim maliyet (1.000 teslim dk):** Bunny ~$0,11 · Mux ~$0,89 ·
+**Özet birim maliyet (1.000 teslim dk):** Bunny ~$0,11 · Mux ~$0,90 ·
 Cloudflare $1,00. Dikey/kısa içerikte düşük bit hızı GB bazlı faturalamayı
 önemli ölçüde avantajlı kılar — bu, ARCHITECTURE.md §6.2'deki Bunny kararının
 ekonomik dayanağıdır. Süre bazlı faturalamanın tahmin edilebilirliği gerekirse
@@ -102,22 +102,27 @@ Cloudflare iyi bir ikinci seçenektir.
 
 ## 4. Birim Ekonomi Örneği (M senaryosu)
 
-Varsayım: abonelik aylık **₺149,99** (Apple/Google fiyat kademeleri yayın
-öncesi teyit edilir), kredi paketi ₺79,99 → ~$4,3 / ~$2,3 (kurs varsayımı,
-teyit edilecek).
+Varsayımlar (tümü açık varsayım, teyitli değildir): abonelik aylık
+**₺149,99**, kredi paketi ₺79,99 (Apple/Google fiyat kademeleri yayın öncesi
+teyit edilir); **1 USD ≈ ₺43** kurs varsayımı — yalnızca bu örnek hesap
+içindir, kur riski §5'te değerlendirilir.
+
+Birim brüt: abonelik ₺149,99 ≈ **$3,49**, kredi paketi ₺79,99 ≈ **$1,86**.
 
 | Kalem | Ay |
 |-------|----|
-| Ödenen abonelik: 1.200 × ₺149,99 = ₺179.988 | ~$4.180 brüt |
-| Mağaza komisyonu %15 | −$627 |
-| Kredi paketi: 250 × ₺79,99 | ~$537 brüt → komisyon −$81 |
-| RevenueCat | −%1 (~$47) |
-| Video (Bunny) + altyapı | −$852 − $260 ≈ −$1.112 |
-| **Yaklaşık katkı** | **≈ +$2.850/ay** |
+| Abonelik: 1.200 × ₺149,99 = ₺179.988 | ~$4.186 brüt |
+| Kredi paketi: 250 × ₺79,99 = ₺19.998 | ~$465 brüt |
+| Mağaza komisyonu %15 (brüt toplam üzerinden) | −$698 |
+| RevenueCat %1 | −$47 |
+| Video (Bunny ≈ $852) + altyapı (§3.2 M orta değer ≈ $260) | −$1.112 |
+| **Yaklaşık katkı** | **≈ +$2.794/ay** |
 
-Kırılım noktası (M senaryosu altyapı + video maliyeti ≈ $1.370/ay): yaklaşık
-**460 ödeyen abonelik eşdeğeri** — ürün hedefi (PRD §7, 3. ayda %4 dönüşüm ×
-50.000 MAU = 2.000 abone) bunun üzerindedir.
+Kırılım noktası: toplam aylık maliyet ≈ $1.112 ÷ net abonelik geliri ≈ $2,93
+(%15 komisyon + %1 RC sonrası) → **≈ 380 ödeyen abonelik eşdeğeri**.
+Hedef karşılaştırması: M senaryosunda %4 abonelik dönüşümü × 50.000 MAU =
+2.000 abone (dönüşüm hedefi: PRD §7) durumunda katkı ≈ +$4.750/ay
+(yalnızca abonelik geliri baz alınarak).
 
 ## 5. Hassasiyet ve Riskler
 

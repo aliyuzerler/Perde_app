@@ -65,7 +65,7 @@ iptalinde access token'ın anında geçersiz kılınması için kontrol edilir),
 | Konu | Uygulama |
 |------|----------|
 | İmzalı erişim | Sağlayıcı imzalı URL/token: Bunny *Token Authentication*, Cloudflare Stream *requireSignedURLs + signed URLs*, Mux *signed playback policy (JWT)* — adapter içinde saklanır (ARCHITECTURE §6.3) |
-| Token bağı | İmza `assetId + exp` içerir; `userId`/oturum bağlantısı API tarafında `playback session` kaydıyla tutulur; aynı oturum için paralel oynatma limiti (varsayılan 2 cihaz) sunucuda sayılır |
+| Token bağı | İmza `assetId + exp` içerir; `userId`/oturum bağlantısı API tarafında `playback_sessions` kaydıyla tutulur (ERD §3.3); aynı oturum için paralel oynatma limiti (varsayılan 2 cihaz) sunucuda sayılır |
 | TTL | 300 sn (URL), izleme süresince sessiz yenileme; URL istemcide **önbelleklenmez ve loglanmaz** |
 | Sızıntı azaltma | HLS segment URL'leri kısa ömürlü; sağlayıcı düzeyinde hotlink/domain koruması; referer kontrolü ikinci katman |
 | İndirme/DRM | MVP'de çevrimdışı indirme yok; post-MVP indirme yalnızca Widevine/FairPlay DRM ile (Bunny Enterprise DRM / Mux DRM) |
@@ -96,8 +96,10 @@ kontrolü + hız sınırı.
 5. **İade/iptal (BR-12):** REFUND/REVOKE olaylarında harcanmamış kredi geri
    alınır, abonelik erişimi kesilir; tüm hareketler ledger'a negatif kayıt
    olarak yansır — bakiye asla negatif kısıtına DB `CHECK` ile korunur
-   (harcanmış krediden düşme politikası: unlock hakkı iade edilir ancak
-   kullanıcıyı negatife sokmaz).
+   (harcanmış krediden bakiye düşülmez, negatif bakiye oluşmaz; krediyle
+   açılmış bölüm hakkı elden çıkarılmaz — "tek seferlik nazik kullanım"
+   tercihi Faz 5'te ürün sahibi onayıyla kesinleştirilir ve iki belgede de
+   aynı şekilde güncellenir).
 6. **Mock politikası:** mock ödeme yalnızca `NODE_ENV=development &&
    __DEV__`; üretim derlemesinde mock modülü `throw` eder; prod flag'i
    yoktur (Genel Kural 8).

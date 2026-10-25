@@ -137,7 +137,7 @@ erDiagram
 | locale | text NOT NULL DEFAULT 'tr' | `tr|en` |
 | role | text NOT NULL DEFAULT 'USER' | `USER|EDITOR|ADMIN` |
 | status | text NOT NULL DEFAULT 'ACTIVE' | `ACTIVE|SUSPENDED|DELETED` |
-| birth_year | int NULL | 18+ içerik kontrolü (F-14) |
+| birth_year | int NULL | 18+ içerik kontrolü (PRD §8) |
 | created_at / updated_at / deleted_at | timestamptz | deleted_at anonimleştirme mührü |
 
 İndeks: `(email)` unique; `(status)`.
@@ -194,7 +194,7 @@ erDiagram
 | access_type | text NOT NULL | `FREE|SUBSCRIPTION|CREDIT` |
 | credit_cost | int NULL CHECK (credit_cost > 0) | `CREDIT` için zorunlu (CHECK) |
 | status | text | `DRAFT|SCHEDULED|PUBLISHED|ARCHIVED` |
-| published_at, free_until_at | timestamptz NULL | `free_until_at` "önce ücretsiz" kampanyaları |
+| published_at, free_until_at | timestamptz NULL | `free_until_at` "önce ücretsiz" kampanya alanıdır — **MVP'de kullanılmaz** (Faz 5+ kararı); oynatma kararında MVP'de yalnızca `access_type` esas alınır |
 | created_at / updated_at | timestamptz | |
 
 **episode_media** — sağlayıcı asset kaydı (sağlayıcı bağımsızlığı, D5).
@@ -207,6 +207,15 @@ erDiagram
 `UNIQUE(user_id, episode_id)`. İndeks: `(user_id, last_watched_at DESC)` — "devam et" rayı.
 
 **favorites** — `id PK; user_id FK CASCADE; content_id FK→contents CASCADE; created_at`. `UNIQUE(user_id, content_id)`.
+
+**playback_sessions** — aktif oynatma oturumları (SECURITY §4: imzalı URL
+`assetId+exp` taşır; kullanıcı/oturum bağlantısı bu tabloda tutulur;
+paralel oynatma limiti burada sayılır).
+`id PK; user_id FK→users CASCADE; episode_id FK→episodes; device_id FK→devices NULL;
+issued_at; expires_at (issued + 300 sn); revoked_at NULL; last_seen_at`.
+İndeks: `(user_id) WHERE revoked_at IS NULL` — paralel oturum sayacı;
+`(episode_id, issued_at DESC)` — kötüye kullanım analizi. Süresi geçen
+oturumlar günlük temizlik job'ı ile silinir (PII minimize).
 
 ### 3.4 Monetizasyon
 
@@ -280,7 +289,7 @@ Kısıt: aynı `billing_period` için en fazla bir `is_active` plan.
 
 ## 4. Ana Akışların Şema İzleri
 
-1. **Oynatma yetkisi (BR-02/07):** `episodes.access_type` → `subscriptions(current_period_end > now() AND status IN (ACTIVE, TRIALING, GRACE_PERIOD))` → `episode_unlocks` → `watch_history(position_seconds)`.
+1. **Oynatma yetkisi (BR-02/07):** `episodes.access_type` → `subscriptions(current_period_end > now() AND status IN (ACTIVE, TRIALING, GRACE_PERIOD))` → `episode_unlocks` → `playback_sessions` (paralel limit ≤ 2) → `watch_history(position_seconds)`.
 2. **Krediyle açma (BR-03/04/06):** `credit_wallets` (FOR UPDATE) → `credit_ledger` (INSERT) → `episode_unlocks` (INSERT) — tek transaction.
 3. **İade (BR-12):** `webhook_events` → `store_transactions.refunded_at` → `credit_ledger(REFUND, negatif)` ve/veya `subscriptions.status=EXPIRED`.
 4. **Hesap silme (BR-11):** `users.deleted_at` set → `devices`/`sessions` silinir → PII kolonları anonimleştirilir → `credit_ledger` ve `store_transactions` **anonim yaşar** (yasal muhafaza; kullanıcı kimliği `anon:<hash>`).

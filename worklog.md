@@ -41,3 +41,21 @@ Stage Summary:
 - docs/: PRD.md, ARCHITECTURE.md (v2), ERD.md, API_CONTRACT.md, SECURITY.md, COST_ESTIMATE.md, RELEASE_PLAN.md üretildi.
 - Kritik kararlar: Bunny Stream birincil video sağlayıcı (adapter ile CF ikinci impl.), RevenueCat (vendor çıkış yolu contract-test ile), satın alınan kredi süresiz / hediye kredi ayrı bakiye, ledger append-only + idempotency zorunlu.
 - Sonraki ajan için: Faz 2 = apps/api (NestJS+Prisma+PostgreSQL); ARCHITECTURE.md §4, ERD.md §3.2, API_CONTRACT.md §3 ve RELEASE_PLAN.md §3.2 okunmalı; EXPO_PUBLIC_MOCK_API=0 geçişi planlanmalı.
+
+---
+Task ID: 3
+Agent: Ana ajan (Z.ai)
+Task: Faz 0 QA — kalite kontrol, test, kabul doğrulaması (dokümantasyon fazı)
+
+Work Log:
+- Git geçmişi + package.json'lar + FAZ-1 raporu incelendi; tanımlı komutlar bulundu (kök typecheck/lint/test → contracts+mobile delege).
+- Testler GERÇEK çalıştırıldı: typecheck PASS, lint PASS, 65/65 test (vitest 16 + jest 49), expo-doctor 20/20, `expo export --platform ios` bundle (3,9 MB) derlendi. `npm run contracts:build` FAIL: Missing script "build" (bulgu D-09).
+- Faz 0 kabul maddeleri (10) tek tek doğrulandı; izlenebilirlik tablosu 9/9 kapsam maddesi + BR-04..13 ile tamam.
+- 12 bulgu sınıflandırıldı (Kritik/Yüksek: yok; Orta: 2; Düşük: 10): COST §4 tutarsız hesaplar (kur/kırılım/PRD atfı) yeniden hesaplandı (≈380 abonelik kırılımı); ERD'ye eksik playback_sessions tablosu eklendi; ERD referans hatası + free_until_at kararı; SECURITY BR-12 ifade çelişkisi hizalandı; API_CONTRACT restore akışı eklendi; RELEASE_PLAN Zaman Varsayımları (§1.1) + Faz 0 numaralandırma notu; 2 kırık npm script kaldırıldı; vitest uyarısı kayda alındı.
+- Düzeltme sonrası typecheck/lint/test tekrar: yeşil (regresyon yok; src/ koduna dokunulmadı).
+- Rapor: docs/qa/FAZ-0-QA.md (izlenebilirlik, bulgular, çalıştırılamayan testler, 9 kalemlik dış bağımlılık risk listesi R-01..R-09, geçiş kararı).
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — Faz 2'ye geçiş onaylandı; uyarılar yalnızca dış bağımlılık riskleri (Apple PLA kredi maddesi, mağaza/RC/video hesapları, kur/hosting teyitleri).
+- Değişen dosyalar: docs/{COST_ESTIMATE,ERD,SECURITY,API_CONTRACT,RELEASE_PLAN}.md, docs/qa/FAZ-0-QA.md (yeni), package.json (kök, 1 script), apps/mobile/package.json (1 script).
+- Sonraki ajan için: Faz 2'ye hazırdır; RELEASE_PLAN §3.2 kabul kriterleri ve ERD §3 (playback_sessions dahil) esas alınmalı.

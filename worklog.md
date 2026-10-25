@@ -59,3 +59,25 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — Faz 2'ye geçiş onaylandı; uyarılar yalnızca dış bağımlılık riskleri (Apple PLA kredi maddesi, mağaza/RC/video hesapları, kur/hosting teyitleri).
 - Değişen dosyalar: docs/{COST_ESTIMATE,ERD,SECURITY,API_CONTRACT,RELEASE_PLAN}.md, docs/qa/FAZ-0-QA.md (yeni), package.json (kök, 1 script), apps/mobile/package.json (1 script).
 - Sonraki ajan için: Faz 2'ye hazırdır; RELEASE_PLAN §3.2 kabul kriterleri ve ERD §3 (playback_sessions dahil) esas alınmalı.
+
+---
+Task ID: 4
+Agent: Ana ajan (Z.ai)
+Task: Faz 2a — Temel altyapı: pnpm monorepo, NestJS API (health), Docker Compose, Next.js admin, env doğrulama, README
+
+Work Log:
+- fullstack-dev skill'i okundu; önyüklü Next.js scaffold kullanılmadı (Faz 1 kararıyla tutarlı: kullanıcı mimarisi monorepo+NestJS+PostgreSQL zorunlu kılıyor; raporda gerekçe var).
+- npm → pnpm 12.15.0 geçişi: pnpm-workspace.yaml (nodeLinker: hoisted — Metro/jest uyumu), packageManager sabitlendi, package-lock silindi, pnpm-lock geldi. pnpm 12 ayar keşfi: node-linker .npmrc'den OKUNMAZ; build izni ayarı `allowBuilds` (map, pnpm.io/settings/build) — @parcel/watcher, unrs-resolver, @prisma/*, prisma, esbuild.
+- apps/api (NestJS 11 + Prisma 6): /health (200 liveness) + /health/db (SELECT 1; down→503+gerçek hata — fake success yok), Zod env doğrulaması (boot'ta anlaşılır TR hata + exit 1), bağımlılıksız .env yükleyici (util.parseEnv, gerçek ortam önceliği), dayanıklı PrismaService (DB yokken boot çökmez), module Node16 (TS6 node10 deprecation'ından kaçınma), vitest 11 test.
+- apps/api iyileştirme döngüsü: zod error callback (zorunluluk mesajı), ESLint consistent-type-imports NestJS DI çelişkisi → paket bazlı off (gerekçe config içinde), tsconfig rootDir:src + tsconfig.build.json → dist/main.js, seed $transaction sadeleştirme.
+- apps/admin: create-next-app (Next 16.4.3 + TW4), iç içe pnpm-workspace.yaml silindi, koyu tema sağlık ekranı (loading/up/down/error + env uyarısı + Sağlığı Yenile), React 16 lint kuralı (set-state-in-effect) için senkron setState'siz mount-fetch, LayoutProps yerine ReactNode, port 3001.
+- docker-compose.yml: postgres:16-alpine + redis:7-alpine (healthcheck'li, env override'lı).
+- Per-app .env.example dosyaları (api/mobile/admin) + kök master referans; mobile'a `dev` script.
+- README yeniden yazıldı: hızlı başlangıç + Windows (PowerShell, WSL2, corepack) + sorun giderme + "sandbox'ta doğrulanmış / makinede doğrulanacak" dürüst ayrımı.
+- CANLI DOĞRULAMA: env eksik → TR hata + exit 1; sandbox DATABASE_URL=file:... reddedildi; /health → 200; /health/db (DB yok) → 503 + "Can't reach database server"; admin → HTTP 200; mobil expo export → bundle OK; kök typecheck/lint/test → 4 workspace, 76 test yeşil (api 11 + contracts 16 + mobile 49).
+- Docker sandbox'ta YOK → db:up/migrate/seed canlı koşulamadı; raporda ve README'de açıkça işaretlendi (kabul maddesi "DB bağlantısı" ⚠️ ile geçti).
+
+Stage Summary:
+- Üretilen: apps/api (16 dosya), apps/admin, docker-compose.yml, pnpm workspace düzeni, per-app env şablonları, doğrulanmış README, docs/phases/FAZ-2.md, ROADMAP Faz 2 = 🚧 2a tamam.
+- Kararlar: hoisted nodeLinker, allowBuilds (pnpm 12), bağımlılıksız env modülü, dürüst health uçları, şema alt küme (2b'de tam ERD).
+- Sonraki ajan için: Faz 2b = tam şema + içerik/feed/arama uçları + mobil gerçek adapter; ÖNCE Docker'lı makinede `pnpm db:migrate --name init` + `db:seed` koşulmalı; apps/api/.env şablonu hazır.

@@ -1,0 +1,90 @@
+// PerdeGo — Prisma şeması (Faz 2a: temel altyapı alt kümesi)
+//
+// Bu şema docs/ERD.md §3.2'nin katalog çekirdeğidir (Category/Content/
+// Episode). Kural: Faz 2a yalnızca altyapıdır; users, credit_ledger,
+// subscriptions vb. tam ERD genişlemesi Faz 2b (İçerik Hizmeti) ve sonrası
+// fazlarda ERD ile birebir eklenecektir. Alan adları ERD ile uyumludur.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Kategori (ERD §3.2 categories)
+model Category {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nameTr    String
+  nameEn    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  contents ContentCategory[]
+
+  @@map("categories")
+}
+
+/// İçerik kökü (ERD §3.2 contents — alt küme)
+model Content {
+  id            String    @id @default(cuid())
+  slug          String    @unique
+  kind          String // FILM | SERIES | SHORT_FILM
+  seriesFormat  String? // STANDARD | MINI (yalnızca SERIES)
+  titleTr       String
+  titleEn       String
+  originalTitle String?
+  synopsisTr    String
+  synopsisEn    String
+  releaseYear   Int
+  ageRating     String?
+  accessType    String    @default("FREE") // FREE | SUBSCRIPTION | CREDIT
+  status        String    @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  categories ContentCategory[]
+  episodes   Episode[]
+
+  @@index([status, publishedAt])
+  @@map("contents")
+}
+
+/// İçerik–kategori ilişkisi (ERD content_categories)
+model ContentCategory {
+  contentId  String
+  categoryId String
+
+  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, categoryId])
+  @@map("content_categories")
+}
+
+/// Bölüm (ERD §3.2 episodes — alt küme)
+model Episode {
+  id              String    @id @default(cuid())
+  contentId       String
+  seasonNumber    Int
+  episodeNumber   Int
+  titleTr         String
+  titleEn         String
+  durationSeconds Int
+  accessType      String    @default("FREE") // FREE | SUBSCRIPTION | CREDIT
+  creditCost      Int?
+  status          String    @default("DRAFT") // DRAFT | SCHEDULED | PUBLISHED | ARCHIVED
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, seasonNumber, episodeNumber])
+  @@map("episodes")
+}

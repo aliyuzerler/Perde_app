@@ -9,7 +9,7 @@
 | Faz | Ad | Ana Çıktı | Durum |
 |-----|----|-----------|-------|
 | 1 | Monorepo Temeli, Sözleşmeler ve Mobil İskelet | Çalışan workspace yapısı, `@perdego/contracts`, tasarım sistemli mobil iskelet (mock veri) | ✅ Tamamlandı |
-| 2 | API Temeli ve İçerik Hizmeti | NestJS + Prisma + PostgreSQL, içerik/feed/arama uçları, mobil uygulamanın gerçek API'ye bağlanması | 🔜 Sıradaki |
+| 2 | API Temeli ve İçerik Hizmeti | NestJS + Prisma + PostgreSQL, içerik/feed/arama uçları, mobil uygulamanın gerçek API'ye bağlanması | 🚧 2a altyapı tamam (health, DB, admin iskelet, pnpm) — 2b içerik uçları sıradaki |
 | 3 | Kimlik Doğrulama ve Hesaplar | Kayıt/giriş, JWT access/refresh, cihaz oturumları, profil yönetimi | ⏳ |
 | 4 | Video Akışı ve Oynatma | HLS entegrasyonu, `expo-video`, sunucu tarafı erişim doğrulaması, izleme geçmişi | ⏳ |
 | 5 | Abonelik, Kredi ve Ödemeler | RevenueCat + StoreKit/Play Billing, kredi bakiyesi, sunucu doğrulaması | ⏳ |

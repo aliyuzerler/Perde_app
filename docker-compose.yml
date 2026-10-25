@@ -1,0 +1,44 @@
+# PerdeGo yerel geliştirme altyapısı (Faz 2a)
+# Kullanım (kök dizinden):
+#   pnpm db:up      # postgres + redis başlat (healthcheck'li)
+#   pnpm db:down    # durdur
+#   pnpm db:logs    # logları izle
+# NOT: Şifreler yalnızca yerel geliştirme içindir; üretimde ortam
+# değişkenleriyle override edin (Genel Kural 7).
+name: perdego
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: perdego-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-perdego}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-perdego_dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-perdego}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - perdego_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-perdego} -d ${POSTGRES_DB:-perdego}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: perdego-redis
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - perdego_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  perdego_pgdata:
+  perdego_redisdata:

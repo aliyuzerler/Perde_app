@@ -1,0 +1,21 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 12 ayarları (pnpm-workspace.yaml içinden okunur)
+# nodeLinker=hoisted: node_modules düzenini npm ile aynı (düz) yapar.
+# Gerekçe: React Native Metro + jest-expo monorepo çözümlemesi ve sandbox
+# inotify limiti (8192) ile en uyumlu düzen; docs.expo.dev monorepo rehberi.
+nodeLinker: hoisted
+
+# Yerel derleme (postinstall) script'i çalışmasına izin verilen bağımlılıklar.
+# pnpm 12 ayar adı: allowBuilds (paket eşleyici → boolean; pnpm.io/settings/build)
+# @parcel/watcher → Metro dosya izleyicisi, unrs-resolver → eslint çözümleyicisi,
+# @prisma/* → motor/istemci kurulumu.
+allowBuilds:
+  '@parcel/watcher': true
+  'unrs-resolver': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  esbuild: true

@@ -8,12 +8,6 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "unrs-resolver"
-    ]
-  },
   "scripts": {
     "dev:mobile": "pnpm --filter @perdego/mobile run dev",
     "dev:api": "pnpm --filter @perdego/api run dev",

@@ -12,7 +12,7 @@ export class HealthController {
     return {
       ok: true,
       service: 'perdego-api',
-      version: process.env.npm_package_version ?? '0.0.0',
+      version: API_VERSION,
       uptimeSeconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
     };

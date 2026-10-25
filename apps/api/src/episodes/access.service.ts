@@ -92,4 +92,58 @@ export class AccessService {
       }
     }
   }
+
+  /**
+   * Toplu karar (Faz 2c N+1 düzeltmesi): `decide` bölüm başına 1 abonelik
+   * + 1 unlock sorgusu atardı (20 bölümlük dizi → 40 sorgu). Bu sürüm
+   * kullanıcı başına TOPLAM 2 sorgu atar (1 abonelik sayısı + 1 unlock
+   * findMany IN) ve kalanı bellekte birleştirir. Karar mantığı `decide`
+   * ile birebir aynıdır (parite testi: access.service.spec.ts).
+   */
+  async decideMany(
+    episodes: ReadonlyArray<
+      Pick<Episode, 'id' | 'accessType' | 'status'> & {
+        content: { ageRating: string | null };
+      }
+    >,
+    user: User | null,
+  ): Promise<EpisodeAccess[]> {
+    if (episodes.length === 0) return [];
+
+    const [hasActiveSubscription, unlockedIds] = await Promise.all([
+      user ? this.hasActiveSubscription(user.id) : Promise.resolve(false),
+      user
+        ? this.prisma.episodeUnlock
+            .findMany({
+              where: { userId: user.id, episodeId: { in: episodes.map((e) => e.id) } },
+              select: { episodeId: true, createdAt: true },
+            })
+            .then((rows) => new Map(rows.map((row) => [row.episodeId, row.createdAt])))
+        : Promise.resolve(new Map<string, Date>()),
+    ]);
+
+    return episodes.map((episode) => {
+      if (episode.status === 'SCHEDULED') {
+        return { canPlay: false, reason: 'SCHEDULED' };
+      }
+      if (this.isAgeRestricted(episode.content, user)) {
+        return { canPlay: false, reason: 'AGE_RESTRICTED' };
+      }
+      switch (episode.accessType) {
+        case 'FREE':
+          return { canPlay: true, reason: 'FREE' };
+        case 'SUBSCRIPTION':
+          return hasActiveSubscription
+            ? { canPlay: true, reason: 'SUBSCRIPTION_ACTIVE' }
+            : { canPlay: false, reason: 'NEEDS_SUBSCRIPTION' };
+        case 'CREDIT': {
+          if (!user) return { canPlay: false, reason: 'NEEDS_CREDITS' };
+          const unlockedAt = unlockedIds.get(episode.id);
+          return unlockedAt
+            ? { canPlay: true, reason: 'UNLOCKED', unlockedAt: unlockedAt.toISOString() }
+            : { canPlay: false, reason: 'NEEDS_CREDITS' };
+        }
+      }
+    });
+  }
 }

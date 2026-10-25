@@ -120,11 +120,15 @@ export const feedResponseSchema = z.object({
 });
 export type FeedResponse = z.infer<typeof feedResponseSchema>;
 
-/** Arama isteği sözleşmesi. */
+/** Arama isteği sözleşmesi (Faz 2c: tür/kategori filtreleri eklenebilir). */
 export const searchParamsSchema = z.object({
   query: z.string().trim().min(1).max(80),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  /** İçerik türü filtresi (opsiyonel). */
+  kind: contentKindSchema.optional(),
+  /** Kategori slug'ı filtresi (opsiyonel). */
+  category: z.string().trim().min(1).max(80).optional(),
 });
 export type SearchParams = z.infer<typeof searchParamsSchema>;
 

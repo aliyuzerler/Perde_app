@@ -5,6 +5,7 @@
  * access/refresh token çifti auth.ts'te tanımlıdır ve buradan kullanılır.
  */
 import { z } from 'zod';
+import { pageMetaSchema } from './common';
 import { contentSummarySchema } from './content';
 import {
   authSessionResponseSchema,
@@ -68,5 +69,7 @@ export type CategoryListResponse = z.infer<typeof categoryListResponseSchema>;
 export const categoryDetailResponseSchema = z.object({
   category: categorySchema,
   items: z.array(contentSummarySchema).default([]),
+  /** Faz 2c: sayfalama meta (GET /catalog/categories/:slug/titles?page=…). */
+  meta: pageMetaSchema.optional(),
 });
 export type CategoryDetailResponse = z.infer<typeof categoryDetailResponseSchema>;

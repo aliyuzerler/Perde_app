@@ -202,14 +202,15 @@ describe('Faz 3 mock adapter', () => {
     expect(terms.content.length).toBeGreaterThan(10);
   });
 
-  it('kategori listesi ve kategori detayını döner', async () => {
+  it('kategori listesi ve kategori detayını sayfalı döner', async () => {
     const adapter = createMockAdapter();
     const list = await adapter.getCategories();
     expect(list.items.length).toBeGreaterThan(0);
 
-    const detail = await adapter.getCategoryContent('dram');
+    const detail = await adapter.getCategoryContent('dram', 1, 20);
     expect(detail.category.slug).toBe('dram');
     expect(detail.items.length).toBeGreaterThan(0);
+    expect(detail.meta).toBeDefined();
     for (const item of detail.items) {
       expect(item.genres).toContain('dram');
     }
@@ -217,7 +218,7 @@ describe('Faz 3 mock adapter', () => {
 
   it('bilinmeyen kategoride hata verir', async () => {
     const adapter = createMockAdapter();
-    await expect(adapter.getCategoryContent('yok-bole-tur')).rejects.toThrow(
+    await expect(adapter.getCategoryContent('yok-bole-tur', 1, 20)).rejects.toThrow(
       'NOT_FOUND'
     );
   });

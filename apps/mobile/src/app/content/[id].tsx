@@ -1,9 +1,12 @@
 /**
- * İçerik detayı: hero, üstveri, özet, kadro, sezon/bölümler.
+ * İçerik detayı: hero, üstveri, özet, kadro, sezon/bölümler (Faz 2c — gerçek API).
  *
- * ÖNEMLİ (dürüst kapsam): oynatma Faz 4'te devreye alınacaktır; bu ekranda
- * oynat düğmesi sahte bir oynatma başlatmaz, bilgilendirme gösterir.
- * Planıma ekleme yerel ve GERÇEK çalışır.
+ * Veri: GET /catalog/titles/:slug → accessSeasons; her bölüm SUNUCU tarafı
+ * erişim kararı taşır (access.reason) + kredi maliyeti (creditCost).
+ *
+ * Favoriler: oturum açıkken sunucu (/watchlist), misafirde yerel liste.
+ * Dürüst kapsam: oynatma Faz 4'te devreye alınacaktır; bu ekranda oynat
+ * düğmesi sahte oynatma başlatmaz, bilgilendirme gösterir.
  */
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -17,7 +20,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
-import { useContentDetail } from '@/hooks/queries/use-content-detail';
+import { useTitleDetail } from '@/hooks/queries/use-title-detail';
+import {
+  useFavorites,
+  useFavoriteMutations,
+  useSessionToken,
+} from '@/hooks/queries/use-favorites';
 import { ScreenContainer } from '@/components/screen-container';
 import { PosterCard } from '@/components/ui/poster-card';
 import { AppBadge } from '@/components/ui/app-badge';
@@ -31,19 +39,20 @@ import { ApiClientError } from '@/services/api-client';
 import { radius, spacing } from '@/theme/tokens';
 import { formatDuration } from '@/utils/format';
 import { getAccessVisual } from '@/utils/access';
-import type { AccessType, Episode } from '@perdego/contracts';
+import type { AccessType, CatalogEpisode } from '@perdego/contracts';
 
 function EpisodeRow({
   episode,
   onPress,
 }: {
-  episode: Episode;
+  episode: CatalogEpisode;
   onPress: () => void;
 }) {
   const { theme } = useTheme();
   const t = useT();
   const styles = rowStyles(theme.colors);
   const access = getAccessVisual(episode.accessType);
+  const serverAccess = episode.access;
 
   return (
     <View style={styles.row}>
@@ -66,7 +75,8 @@ function EpisodeRow({
           <AppText variant="caption" color="textSubtle">
             {formatDuration(episode.durationSeconds)}
           </AppText>
-          {access.locked ? (
+          {/* Sunucu kararı: kilitli bölüm kilidi + kredi maliyeti etiketi */}
+          {serverAccess && !serverAccess.canPlay ? (
             <Ionicons
               name="lock-closed-outline"
               size={14}
@@ -74,6 +84,13 @@ function EpisodeRow({
               style={styles.lockIcon}
             />
           ) : null}
+          {episode.accessType === 'CREDIT' && episode.creditCost ? (
+            <AppBadge
+              label={t('access.creditCost', { count: episode.creditCost })}
+              tone="outline"
+            />
+          ) : null}
+          <AppBadge label={t(`access.${access.labelKey}` as 'access.FREE')} tone="neutral" />
         </View>
       </View>
     </View>
@@ -85,37 +102,47 @@ export default function ContentDetailScreen() {
   const t = useT();
   const styles = getStyles(theme.colors);
   const params = useLocalSearchParams<{ id: string }>();
-  const contentId = typeof params.id === 'string' ? params.id : '';
-  const detail = useContentDetail(contentId);
+  // Rota parametresi artık SLUG taşıyor (Faz 2c: /catalog/titles/:slug).
+  const slug = typeof params.id === 'string' ? params.id : '';
+  const detail = useTitleDetail(slug);
 
-  const watchlistItems = useWatchlistStore((state) => state.items);
-  const addToWatchlist = useWatchlistStore((state) => state.add);
-  const removeFromWatchlist = useWatchlistStore((state) => state.remove);
-  const inList = watchlistItems.some((entry) => entry.contentId === contentId);
+  const sessionToken = useSessionToken();
+  const favorites = useFavorites(sessionToken);
+  const favoriteMutations = useFavoriteMutations();
+
+  const localFavorites = useWatchlistStore((state) => state.items);
+  const addToLocalWatchlist = useWatchlistStore((state) => state.add);
+  const removeFromLocalWatchlist = useWatchlistStore((state) => state.remove);
 
   // Kayıtlı izleme ilerlemesi (varsa "İzlemeye Başla" kaldığı yerden açar).
   const playbackEntries = usePlaybackStore((state) => state.entries);
   const savedEntry = Object.values(playbackEntries).find(
-    (entry) => entry.contentId === contentId
+    (entry) => entry.contentId === detail.data?.id
   );
 
   const [activeSeason, setActiveSeason] = useState(1);
 
   const content = detail.data;
 
-  const notifyPlaybackUnavailable = useCallback(() => {
-    Alert.alert(
-      t('content.watchUnavailableTitle'),
-      t('content.watchUnavailableBody')
-    );
-  }, [t]);
+  const serverInList =
+    sessionToken != null &&
+    (favorites.data?.items ?? []).some((item) => item.contentId === content?.id);
+  const localInList = localFavorites.some((entry) => entry.contentId === content?.id);
+  const inList = sessionToken != null ? serverInList : localInList;
 
-  const toggleWatchlist = useCallback(() => {
+  const toggleFavorite = useCallback(() => {
     if (!content) return;
-    if (inList) {
-      removeFromWatchlist(content.id);
+    if (sessionToken != null) {
+      // Sunucu favorisi (kimlikli) — idempotent ekle/kaldır.
+      if (serverInList) favoriteMutations.remove.mutate(content.id);
+      else favoriteMutations.add.mutate(content.id);
+      return;
+    }
+    // Misafir: yerel liste.
+    if (localInList) {
+      removeFromLocalWatchlist(content.id);
     } else {
-      addToWatchlist({
+      addToLocalWatchlist({
         contentId: content.id,
         slug: content.slug,
         kind: content.kind,
@@ -129,13 +156,22 @@ export default function ContentDetailScreen() {
         isNew: content.isNew,
       });
     }
-  }, [addToWatchlist, content, inList, removeFromWatchlist]);
+  }, [
+    addToLocalWatchlist,
+    content,
+    favoriteMutations,
+    localInList,
+    removeFromLocalWatchlist,
+    serverInList,
+    sessionToken,
+  ]);
 
   const metaLine = useMemo(() => {
     if (!content) return '';
     const parts: string[] = [String(content.releaseYear)];
     if (content.kind === 'SERIES') {
-      parts.push(`${content.seasons.length} ${'Sezon'}`);
+      const seasonCount = content.seasons.length;
+      parts.push(`${seasonCount} ${'Sezon'}`);
     } else if (content.durationSeconds) {
       parts.push(formatDuration(content.durationSeconds));
     }
@@ -146,7 +182,7 @@ export default function ContentDetailScreen() {
   }, [content]);
 
   const body = useMemo(() => {
-    if (!contentId || detail.isPending) {
+    if (!slug || detail.isPending) {
       return <LoadingView variant="detail" />;
     }
     if (detail.isError) {
@@ -166,7 +202,7 @@ export default function ContentDetailScreen() {
       );
     }
     return null;
-  }, [contentId, detail, t, styles.centered]);
+  }, [slug, detail, t, styles.centered]);
 
   if (body || !content) {
     return (
@@ -184,12 +220,14 @@ export default function ContentDetailScreen() {
     );
   }
 
+  // Erişim kararlı sezonlar (sunucu kararı): sezon seçici + bölüm satırları.
+  const accessSeasons = content.accessSeasons;
   const currentSeason =
-    content.seasons.find((season) => season.seasonNumber === activeSeason) ??
-    content.seasons[0];
+    accessSeasons.find((season) => season.seasonNumber === activeSeason) ??
+    accessSeasons[0];
 
   /** Oynatma hedefi: önce kayıtlı ilerleme, yoksa ilk bölüm; filmler detay açar. */
-  const firstEpisode = content.seasons[0]?.episodes[0];
+  const firstEpisode = accessSeasons[0]?.episodes[0];
   const savedEpisodeId = savedEntry?.episodeId;
 
   const startPlayback = () => {
@@ -210,10 +248,13 @@ export default function ContentDetailScreen() {
       return;
     }
     // FILM / SHORT_FILM: Faz 4'te tek medya olarak oynatılacak.
-    notifyPlaybackUnavailable();
+    Alert.alert(
+      t('content.watchUnavailableTitle'),
+      t('content.watchUnavailableBody')
+    );
   };
 
-  const openEpisode = (episode: Episode) => {
+  const openEpisode = (episode: CatalogEpisode) => {
     router.push({
       pathname: '/player/[episodeId]',
       params: { episodeId: episode.id, contentId: content.id },
@@ -272,7 +313,7 @@ export default function ContentDetailScreen() {
               <AppButton
                 label={inList ? t('content.inList') : t('content.addToList')}
                 variant={inList ? 'secondary' : 'ghost'}
-                onPress={toggleWatchlist}
+                onPress={toggleFavorite}
               />
             </View>
           </View>
@@ -301,12 +342,12 @@ export default function ContentDetailScreen() {
             </View>
           ) : null}
 
-          {content.kind === 'SERIES' && content.seasons.length > 0 ? (
+          {content.kind === 'SERIES' && accessSeasons.length > 0 ? (
             <View style={styles.section}>
               <AppText variant="heading">{t('content.episodesTitle')}</AppText>
-              {content.seasons.length > 1 ? (
+              {accessSeasons.length > 1 ? (
                 <View style={styles.seasonRow}>
-                  {content.seasons.map((season) => {
+                  {accessSeasons.map((season) => {
                     const active = season.seasonNumber === activeSeason;
                     return (
                       <Pressable
@@ -442,6 +483,8 @@ const rowStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
     metaRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: spacing[2],
+      flexWrap: 'wrap',
     },
     lockIcon: {
       marginLeft: spacing[1],

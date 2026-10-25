@@ -1,19 +1,24 @@
 /**
- * Kategori sayfası — bir türün tüm yapımları (poster ızgarası).
+ * Kategori sayfası — bir türün tüm yapımları (GET /catalog/categories/:slug/titles,
+ * sonsuz kaydırma). Faz 2c: gerçek API, ağ hata/boş durum tasarımı.
  */
-import { StyleSheet, ScrollView, View, Pressable } from 'react-native';
+import { StyleSheet, View, Pressable, FlatList, type ListRenderItemInfo } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
-import { contentApi } from '@/services/adapter';
+import { useCategoryContent } from '@/hooks/queries/use-category-content';
+import { useNetworkStatus, isDefinitelyOffline } from '@/hooks/use-network';
+import { useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '@/components/screen-container';
 import { AppText } from '@/components/ui/app-text';
 import { PosterCard } from '@/components/ui/poster-card';
 import { LoadingView } from '@/components/state-views/loading-view';
 import { ErrorView } from '@/components/state-views/error-view';
+import { ApiClientError } from '@/services/api-client';
+import { queryKeys } from '@/hooks/queries/query-keys';
 import { spacing } from '@/theme/tokens';
+import type { ContentSummary } from '@perdego/contracts';
 
 export default function CategoryScreen() {
   const { theme } = useTheme();
@@ -21,12 +26,32 @@ export default function CategoryScreen() {
   const styles = getStyles(theme.colors);
   const params = useLocalSearchParams<{ slug: string }>();
   const slug = typeof params.slug === 'string' ? params.slug : '';
+  const network = useNetworkStatus();
+  const queryClient = useQueryClient();
 
-  const query = useQuery({
-    queryKey: ['category', slug] as const,
-    queryFn: () => contentApi.getCategoryContent(slug),
-    enabled: slug.length > 0,
-  });
+  const query = useCategoryContent(slug);
+
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const offline = isDefinitelyOffline(network.connectivity);
+  const isNotFound =
+    query.error instanceof ApiClientError && query.error.code === 'NOT_FOUND';
+
+  const renderItem = ({ item }: ListRenderItemInfo<ContentSummary>) => (
+    // NOT: dış kapsayıcı role=button DEĞİL — PosterCard kendi erişilebilir butonu.
+    <Pressable
+      onPress={() => router.push({ pathname: '/content/[id]', params: { id: item.slug } })}
+      style={styles.gridItem}
+    >
+      <PosterCard
+        title={item.title}
+        metaText={String(item.releaseYear)}
+        aspect="poster"
+        imageUrl={item.posterUrl}
+        accessType={item.accessType}
+        isNew={item.isNew}
+      />
+    </Pressable>
+  );
 
   return (
     <ScreenContainer>
@@ -40,7 +65,7 @@ export default function CategoryScreen() {
           <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
         </Pressable>
         <AppText variant="heading">
-          {query.data?.category.name ?? slug.replace(/-/g, ' ')}
+          {query.data?.pages[0]?.category.name ?? slug.replace(/-/g, ' ')}
         </AppText>
       </View>
 
@@ -48,47 +73,55 @@ export default function CategoryScreen() {
         <LoadingView variant="list" />
       ) : query.isError ? (
         <ErrorView
-          title={t('category.notFoundTitle')}
-          body={t('category.notFoundBody')}
-          onRetry={() => query.refetch()}
+          kind={isNotFound ? 'generic' : offline ? 'network' : 'generic'}
+          title={isNotFound ? t('category.notFoundTitle') : t('error.networkTitle')}
+          body={isNotFound ? t('category.notFoundBody') : t('error.networkBody')}
+          onRetry={() => {
+            network.refresh();
+            void query.refetch();
+          }}
           style={styles.centered}
         />
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <AppText variant="caption" color="textSubtle" style={styles.count}>
-            {t('category.contentCount', { count: query.data.items.length })}
+      ) : items.length === 0 ? (
+        <View style={styles.empty}>
+          <AppText variant="body" color="textMuted" style={styles.emptyText}>
+            {t('empty.genericTitle')}
           </AppText>
-          <View style={styles.grid}>
-            {query.data.items.map((item) => (
-              // NOT: dış kapsayıcı role=button DEĞİL — PosterCard zaten kendi
-              // erişilebilir butonu; RNW'de iç içe <button> geçersiz HTML (FAZ-2 QA).
-              <Pressable
-                key={item.contentId}
-                onPress={() =>
-                  router.push({
-                    pathname: '/content/[id]',
-                    params: { id: item.contentId },
-                  })
-                }
-                style={styles.gridItem}
-              >
-                <PosterCard
-                  title={item.title}
-                  metaText={String(item.releaseYear)}
-                  aspect="poster"
-                  imageUrl={item.posterUrl}
-                  accessType={item.accessType}
-                  isNew={item.isNew}
-                />
-              </Pressable>
-            ))}
-          </View>
-          {query.data.items.length === 0 ? (
-            <AppText variant="body" color="textMuted" style={styles.empty}>
-              {t('empty.genericTitle')}
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item: ContentSummary) => item.contentId}
+          renderItem={renderItem}
+          numColumns={3}
+          columnWrapperStyle={styles.gridColumn}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <AppText variant="caption" color="textSubtle" style={styles.count}>
+              {t('category.contentCount', {
+                count: query.data?.pages[0]?.category.contentCount ?? items.length,
+              })}
             </AppText>
-          ) : null}
-        </ScrollView>
+          }
+          ListFooterComponent={
+            query.isFetchingNextPage ? (
+              <View style={styles.footer}>
+                <LoadingView variant="list" style={styles.footerLoader} />
+              </View>
+            ) : undefined
+          }
+          onEndReached={() => {
+            if (query.hasNextPage && !query.isFetchingNextPage) {
+              void query.fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          onRefresh={() => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.category(slug) });
+            network.refresh();
+          }}
+          refreshing={false}
+        />
       )}
     </ScreenContainer>
   );
@@ -125,11 +158,27 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
       paddingHorizontal: spacing[4],
       rowGap: spacing[4],
     },
+    gridColumn: {
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing[4],
+      marginBottom: spacing[4],
+    },
     gridItem: {
       width: '31.5%',
     },
+    footer: {
+      paddingVertical: spacing[3],
+    },
+    footerLoader: {
+      minHeight: 120,
+    },
     empty: {
       padding: spacing[4],
+      alignItems: 'center',
+      flex: 1,
+      justifyContent: 'center',
+    },
+    emptyText: {
       textAlign: 'center',
     },
   });

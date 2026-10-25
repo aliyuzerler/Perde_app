@@ -12,6 +12,7 @@ export const tr = {
     minutes: 'dk',
     hoursShort: 'sa',
     loading: 'Yükleniyor…',
+    loadingMore: 'Daha fazla yükleniyor…',
     offline: 'Bağlantı sağlanamadı',
   },
   tabs: {
@@ -61,6 +62,7 @@ export const tr = {
     FREE: 'Ücretsiz',
     SUBSCRIPTION: 'Üyelere özel',
     CREDIT: 'Kredi ile',
+    creditCost: '{{count}} kredi',
   },
   content: {
     episodesTitle: 'Bölümler',
@@ -89,6 +91,11 @@ export const tr = {
   },
   empty: {
     genericTitle: 'Burada henüz bir şey yok',
+    catalogTitle: 'Katalog şimdilik boş',
+    catalogBody: 'Yeni yapımlar yayınlandığında burada görünecek. Kısa süre içinde tekrar bak.',
+  },
+  offline: {
+    banner: 'İnternet bağlantısı yok — içerikler güncellenmeyebilir',
   },
   notFound: {
     title: 'Sayfa bulunamadı',
@@ -164,6 +171,7 @@ export const tr = {
     tabFavorites: 'Favoriler',
     tabContinue: 'Devam',
     tabHistory: 'Geçmiş',
+    localSourceNote: 'Misafir modu — listeler bu cihazda tutulur',
     emptyFavoritesTitle: 'Favori listen boş',
     emptyFavoritesBody: 'Beğendiğin yapımları detay sayfasından Planıma ekleyebilirsin.',
     emptyContinueTitle: 'Devam edilecek bir şey yok',

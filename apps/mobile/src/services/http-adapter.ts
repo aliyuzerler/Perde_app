@@ -1,31 +1,40 @@
 /**
- * HTTP adapter — gerçek sunucu istemcisi (Faz 3b: hesap uçları devrede).
+ * HTTP adapter — gerçek sunucu istemcisi (Faz 2c: katalog uçları devrede).
  *
- * Katalog uçları (/feed, /search, /content, /categories) ve hesap uçları
- * (auth/account/legal) gerçek API'ye bağlanır. Kredi/abonelik satın alma
- * uçları sunucu mağaza entegrasyonu (Faz 5) öncesinde dürüstçe hata verir
- * (sahte başarılı yanıt üretmez).
+ * Katalog uçları gerçek API'ye bağlanır:
+ *   /home · /catalog/titles · /catalog/titles/:slug · /catalog/episodes/:id
+ *   /search?query=&kind=&category= · /catalog/categories · /catalog/categories/:slug/titles
+ * Favoriler (/watchlist) ve izleme ilerlemesi (/watch-progress) oturum
+ * gerektirir; access token ApiClient tarafından başlığa eklenir.
+ *
+ * Kredi/abonelik satın alma uçları sunucu mağaza entegrasyonu (Faz 5)
+ * öncesinde dürüstçe hata verir (sahte başarılı yanıt üretmez).
  */
 import type {
   AccountDeletionResponse,
   AuthSession,
   AuthSessionListResponse,
-  RegisterRequest,
-  CategoryDetailResponse,
-  CategoryListResponse,
-  Content,
-  CreditPacksResponse,
-  FeedResponse,
+  EpisodeDetailResponse,
+  FavoritesListResponse,
+  FavoriteMutationResponse,
+  HomeResponse,
   LegalDocument,
   PlansResponse,
   PublicUserProfile,
+  RegisterRequest,
   SearchParams,
   SearchResponse,
+  TitleDetailResponse,
+  TitleListParams,
+  TitleListResponse,
+  WatchProgressListResponse,
+  WatchProgressPut,
+  CreditPacksResponse,
   WalletResponse,
   WalletTransactionsResponse,
 } from '@perdego/contracts';
 import { ApiClient, ApiClientError } from './api-client';
-import type { ContentApiPort } from './ports';
+import type { ContentApiPort, CategoryContentPage } from './ports';
 
 function notYetImplemented(faz: string): ApiClientError {
   return new ApiClientError(
@@ -35,33 +44,96 @@ function notYetImplemented(faz: string): ApiClientError {
   );
 }
 
+function toQueryString(entries: Record<string, string | number | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(entries)) {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  }
+  return params.toString();
+}
+
 export function createHttpAdapter(client: ApiClient): ContentApiPort {
   return {
-    // ---------------- Katalog ----------------
-    async getFeed(): Promise<FeedResponse> {
-      return client.get<FeedResponse>('/feed');
+    // ---------------- Katalog (Faz 2c) ----------------
+    async getFeed(): Promise<HomeResponse> {
+      return client.get<HomeResponse>('/home');
+    },
+
+    async listTitles(params: TitleListParams): Promise<TitleListResponse> {
+      const query = toQueryString({
+        page: params.page,
+        pageSize: params.pageSize,
+        kind: params.kind,
+        accessType: params.accessType,
+        category: params.category,
+        sort: params.sort,
+      });
+      return client.get<TitleListResponse>(`/catalog/titles?${query}`);
     },
 
     async searchContent(params: SearchParams): Promise<SearchResponse> {
-      const query = new URLSearchParams({
+      const query = toQueryString({
         query: params.query,
-        page: String(params.page),
-        pageSize: String(params.pageSize),
-      }).toString();
+        page: params.page,
+        pageSize: params.pageSize,
+        kind: params.kind,
+        category: params.category,
+      });
       return client.get<SearchResponse>(`/search?${query}`);
     },
 
-    async getContentDetail(contentId: string): Promise<Content> {
-      return client.get<Content>(`/content/${encodeURIComponent(contentId)}`);
+    async getTitleDetail(slug: string): Promise<TitleDetailResponse> {
+      return client.get<TitleDetailResponse>(`/catalog/titles/${encodeURIComponent(slug)}`);
     },
 
-    async getCategories(): Promise<CategoryListResponse> {
-      return client.get<CategoryListResponse>('/categories');
+    async getEpisodeDetail(episodeId: string): Promise<EpisodeDetailResponse> {
+      return client.get<EpisodeDetailResponse>(`/catalog/episodes/${encodeURIComponent(episodeId)}`);
     },
 
-    async getCategoryContent(slug: string): Promise<CategoryDetailResponse> {
-      return client.get<CategoryDetailResponse>(
-        `/categories/${encodeURIComponent(slug)}/content`
+    async getCategories() {
+      return client.get('/catalog/categories');
+    },
+
+    async getCategoryContent(slug: string, page: number, pageSize: number): Promise<CategoryContentPage> {
+      const query = toQueryString({ page, pageSize });
+      return client.get<CategoryContentPage>(
+        `/catalog/categories/${encodeURIComponent(slug)}/titles?${query}`
+      );
+    },
+
+    // ---------------- Favoriler ve izleme (Faz 2c) ----------------
+    async getFavorites(): Promise<FavoritesListResponse> {
+      return client.get<FavoritesListResponse>('/watchlist');
+    },
+
+    async addFavorite(contentId: string): Promise<FavoriteMutationResponse> {
+      return client.post<FavoriteMutationResponse>(`/watchlist/${encodeURIComponent(contentId)}`);
+    },
+
+    async removeFavorite(contentId: string): Promise<FavoriteMutationResponse> {
+      return client.delete<FavoriteMutationResponse>(`/watchlist/${encodeURIComponent(contentId)}`);
+    },
+
+    async getWatchProgress(params: {
+      scope: 'continue' | 'history';
+      page: number;
+      pageSize: number;
+    }): Promise<WatchProgressListResponse> {
+      const query = toQueryString({
+        scope: params.scope,
+        page: params.scope === 'history' ? params.page : undefined,
+        pageSize: params.scope === 'history' ? params.pageSize : undefined,
+      });
+      return client.get<WatchProgressListResponse>(`/watch-progress?${query}`);
+    },
+
+    async saveWatchProgress(
+      episodeId: string,
+      input: WatchProgressPut,
+    ): Promise<{ saved: true; completed: boolean }> {
+      return client.put<{ saved: true; completed: boolean }>(
+        `/watch-progress/${encodeURIComponent(episodeId)}`,
+        input
       );
     },
 

@@ -124,8 +124,15 @@ export class CatalogService {
           });
           items = rows.map((row) => toContentSummary(row, lang, this.baseUrl));
         } else {
+          // Küratörlü items: yalnızca yayında ve yayın tarihi geçmiş kayıtlar
+          // (Faz 2c: bayat publishedAt denetimi eklendi — listede erken gösterim yok).
+          const now = new Date();
           items = section.items
-            .filter((item) => item.content.status === 'PUBLISHED')
+            .filter(
+              (item) =>
+                item.content.status === 'PUBLISHED' &&
+                (!item.content.publishedAt || item.content.publishedAt <= now),
+            )
             .map((item) => toContentSummary(item.content, lang, this.baseUrl));
         }
         if (items.length === 0) return null;
@@ -241,7 +248,16 @@ export class CatalogService {
 
   // ---------------- Arama ----------------------------------------------------
 
-  async search(params: { query: string; page: number; pageSize: number }, lang: Lang): Promise<{
+  async search(
+    params: {
+      query: string;
+      page: number;
+      pageSize: number;
+      kind?: string;
+      category?: string;
+    },
+    lang: Lang,
+  ): Promise<{
     items: ContentSummary[];
     meta: ReturnType<typeof buildPageMeta>;
   }> {
@@ -260,6 +276,13 @@ export class CatalogService {
         { synopsisTr: { contains: q, mode: 'insensitive' } },
       ],
     };
+    // Faz 2c filtreleri (sayfalama ile birlikte; ADDITIVE — mevcut davranış korunur).
+    if (params.kind) where.kind = params.kind as Prisma.ContentWhereInput['kind'];
+    if (params.category) {
+      where.categories = {
+        some: { category: { slug: params.category, isActive: true } },
+      };
+    }
 
     const [rows, total] = await Promise.all([
       this.prisma.content.findMany({
@@ -290,14 +313,16 @@ export class CatalogService {
       where: { contentId },
       orderBy: { seasonNumber: 'asc' },
     });
+    // N+1 önleme (Faz 2c): bölüm başına decide() yerine tek decideMany() —
+    // kullanıcı başına toplam 2 sorgu (abonelik + toplu unlock).
+    const accessList = await this.access.decideMany(episodes, user);
     const bySeason = new Map<number, CatalogEpisode[]>();
-    for (const episode of episodes) {
-      const access = await this.access.decide(episode, user);
-      const view = toCatalogEpisode(episode, lang, this.baseUrl, access);
+    episodes.forEach((episode, index) => {
+      const view = toCatalogEpisode(episode, lang, this.baseUrl, accessList[index]);
       const list = bySeason.get(episode.seasonNumber) ?? [];
       list.push(view);
       bySeason.set(episode.seasonNumber, list);
-    }
+    });
     return groupSeasons(seasons, bySeason, lang);
   }
 }

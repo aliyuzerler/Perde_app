@@ -15,6 +15,7 @@ export const en: TranslationDict = {
     minutes: 'min',
     hoursShort: 'h',
     loading: 'Loading…',
+    loadingMore: 'Loading more…',
     offline: 'No connection',
   },
   tabs: {
@@ -64,6 +65,7 @@ export const en: TranslationDict = {
     FREE: 'Free',
     SUBSCRIPTION: 'Members only',
     CREDIT: 'With credit',
+    creditCost: '{{count}} credits',
   },
   content: {
     episodesTitle: 'Episodes',
@@ -92,6 +94,11 @@ export const en: TranslationDict = {
   },
   empty: {
     genericTitle: 'Nothing here yet',
+    catalogTitle: 'The catalog is empty for now',
+    catalogBody: 'New titles will appear here as soon as they are published. Please check back shortly.',
+  },
+  offline: {
+    banner: 'No internet connection — content may be outdated',
   },
   notFound: {
     title: 'Page not found',
@@ -167,6 +174,7 @@ export const en: TranslationDict = {
     tabFavorites: 'Favorites',
     tabContinue: 'Continue',
     tabHistory: 'History',
+    localSourceNote: 'Guest mode — lists are stored on this device',
     emptyFavoritesTitle: 'Your favorites list is empty',
     emptyFavoritesBody: 'Add titles you love to My List from their detail page.',
     emptyContinueTitle: 'Nothing to continue yet',

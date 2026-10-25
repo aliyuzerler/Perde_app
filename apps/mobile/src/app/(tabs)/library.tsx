@@ -1,7 +1,8 @@
 /**
- * Planım — Favoriler | Devam | Geçmiş segmentleri.
- * Favoriler: yerel watchlist-store (gerçek). Devam/Geçmiş: playback-store
- * (gerçek yerel izleme ilerlemesi). Sunucu eşitlemesi sonraki fazlarda.
+ * Planım — Favoriler | Devam | Geçmiş segmentleri (Faz 2c: gerçek uçlar).
+ *
+ * Oturum açıkken: sunucu kaynaklı veri (GET /watchlist, GET /watch-progress).
+ * Misafirde: yerel store'lar (kural: sahte başarı yok — kaynak etiketi net).
  */
 import { useState } from 'react';
 import { StyleSheet, ScrollView, View, Pressable, FlatList } from 'react-native';
@@ -12,14 +13,36 @@ import { ScreenContainer } from '@/components/screen-container';
 import { AppText } from '@/components/ui/app-text';
 import { PosterCard } from '@/components/ui/poster-card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
+import { LoadingView } from '@/components/state-views/loading-view';
+import { ErrorView } from '@/components/state-views/error-view';
 import { EmptyView } from '@/components/state-views/empty-view';
-import { ContinueCard } from '@/components/home/continue-card';
+import { ContinueCard, type ContinueEntry } from '@/components/home/continue-card';
+import {
+  useFavorites,
+  useSessionToken,
+} from '@/hooks/queries/use-favorites';
+import { useWatchProgress } from '@/hooks/queries/use-watch-progress';
+import { ApiClientError } from '@/services/api-client';
 import { useWatchlistStore } from '@/store/watchlist-store';
 import { usePlaybackStore } from '@/store/playback-store';
 import { spacing } from '@/theme/tokens';
-import type { ContentSummary } from '@perdego/contracts';
+import type { ContentSummary, WatchProgressItem } from '@perdego/contracts';
 
 type LibraryTab = 'favorites' | 'continue' | 'history';
+
+function watchItemToEntry(item: WatchProgressItem): ContinueEntry {
+  return {
+    contentId: item.contentId,
+    contentTitle: item.contentTitle,
+    episodeId: item.episodeId,
+    episodeTitle: item.episodeTitle,
+    seasonNumber: item.seasonNumber,
+    episodeNumber: item.episodeNumber,
+    positionSeconds: item.positionSeconds,
+    durationSeconds: item.durationSeconds,
+    posterUrl: item.posterUrl ?? null,
+  };
+}
 
 export default function LibraryScreen() {
   const { theme } = useTheme();
@@ -27,9 +50,17 @@ export default function LibraryScreen() {
   const styles = getStyles(theme.colors);
   const [tab, setTab] = useState<LibraryTab>('favorites');
 
-  const favorites = useWatchlistStore((state) => state.items);
-  const continueEntries = usePlaybackStore((state) => state.continueWatching)();
-  const historyEntries = usePlaybackStore((state) => state.history)();
+  const sessionToken = useSessionToken();
+  const signedIn = sessionToken != null;
+
+  const favoritesQuery = useFavorites(sessionToken);
+  const continueQuery = useWatchProgress('continue', sessionToken);
+  const historyQuery = useWatchProgress('history', sessionToken);
+
+  // Misafir yedekleri (yerel, gerçek çalışan veriler).
+  const localFavorites = useWatchlistStore((state) => state.items);
+  const localContinue = usePlaybackStore((state) => state.continueWatching)();
+  const localHistory = usePlaybackStore((state) => state.history)();
   const removeHistory = usePlaybackStore((state) => state.remove);
 
   const renderFavorite = ({ item }: { item: ContentSummary }) => (
@@ -43,16 +74,46 @@ export default function LibraryScreen() {
         isNew={item.isNew}
         width={104}
         onPress={() =>
-          router.push({ pathname: '/content/[id]', params: { id: item.contentId } })
+          router.push({ pathname: '/content/[id]', params: { id: item.slug } })
         }
       />
     </View>
   );
 
+  // Kaynak seçimi: oturum → sunucu; hata → yerel listeyle devam (dürüst karışım).
+  const favorites: ContentSummary[] = signedIn
+    ? (favoritesQuery.data?.items ?? [])
+    : localFavorites;
+  const continueEntries: ContinueEntry[] = signedIn
+    ? (continueQuery.data?.pages[0]?.items ?? []).map(watchItemToEntry)
+    : localContinue;
+  const historyEntries: (ContinueEntry | WatchProgressItem)[] = signedIn
+    ? (historyQuery.data?.pages.flatMap((page) => page.items) ?? [])
+    : localHistory;
+
+  const loading = {
+    favorites: signedIn && favoritesQuery.isPending,
+    continue: signedIn && continueQuery.isPending,
+    history: signedIn && historyQuery.isPending,
+  };
+  const error = {
+    favorites:
+      signedIn &&
+      favoritesQuery.isError &&
+      !(favoritesQuery.error instanceof ApiClientError && favoritesQuery.error.isNetworkFailure),
+    continue: signedIn && continueQuery.isError,
+    history: signedIn && historyQuery.isError,
+  };
+
   return (
     <ScreenContainer>
       <View style={styles.header}>
         <AppText variant="display">{t('watchlist.title')}</AppText>
+        {!signedIn ? (
+          <AppText variant="caption" color="textSubtle">
+            {t('library.localSourceNote')}
+          </AppText>
+        ) : null}
         <SegmentedControl<LibraryTab>
           options={[
             { value: 'favorites', label: t('library.tabFavorites') },
@@ -65,7 +126,16 @@ export default function LibraryScreen() {
       </View>
 
       {tab === 'favorites' ? (
-        favorites.length === 0 ? (
+        loading.favorites ? (
+          <LoadingView variant="list" />
+        ) : error.favorites ? (
+          <ErrorView
+            title={t('error.genericTitle')}
+            body={t('error.genericBody')}
+            onRetry={() => void favoritesQuery.refetch()}
+            style={styles.centered}
+          />
+        ) : favorites.length === 0 ? (
           <EmptyView
             title={t('library.emptyFavoritesTitle')}
             body={t('library.emptyFavoritesBody')}
@@ -80,12 +150,24 @@ export default function LibraryScreen() {
             contentContainerStyle={styles.grid}
             columnWrapperStyle={styles.gridColumn}
             renderItem={renderFavorite}
+            onEndReached={() => {
+              // Favoriler küçük liste — sayfalama yok (sunucu bütünü döner).
+            }}
           />
         )
       ) : null}
 
       {tab === 'continue' ? (
-        continueEntries.length === 0 ? (
+        loading.continue ? (
+          <LoadingView variant="list" />
+        ) : error.continue ? (
+          <ErrorView
+            title={t('error.networkTitle')}
+            body={t('error.networkBody')}
+            onRetry={() => void continueQuery.refetch()}
+            style={styles.centered}
+          />
+        ) : continueEntries.length === 0 ? (
           <EmptyView
             title={t('library.emptyContinueTitle')}
             body={t('library.emptyContinueBody')}
@@ -117,7 +199,16 @@ export default function LibraryScreen() {
       ) : null}
 
       {tab === 'history' ? (
-        historyEntries.length === 0 ? (
+        loading.history ? (
+          <LoadingView variant="list" />
+        ) : error.history ? (
+          <ErrorView
+            title={t('error.networkTitle')}
+            body={t('error.networkBody')}
+            onRetry={() => void historyQuery.refetch()}
+            style={styles.centered}
+          />
+        ) : historyEntries.length === 0 ? (
           <EmptyView
             title={t('library.emptyHistoryTitle')}
             body={t('library.emptyHistoryBody')}
@@ -151,16 +242,18 @@ export default function LibraryScreen() {
                     {t('content.episodeLabel', { number: entry.episodeNumber })}
                   </AppText>
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('library.remove')}
-                  onPress={() => removeHistory(entry.episodeId)}
-                  style={styles.removeButton}
-                >
-                  <AppText variant="caption" color="textSubtle">
-                    {t('library.remove')}
-                  </AppText>
-                </Pressable>
+                {!signedIn ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('library.remove')}
+                    onPress={() => removeHistory(entry.episodeId)}
+                    style={styles.removeButton}
+                  >
+                    <AppText variant="caption" color="textSubtle">
+                      {t('library.remove')}
+                    </AppText>
+                  </Pressable>
+                ) : null}
               </Pressable>
             ))}
           </View>
@@ -172,6 +265,10 @@ export default function LibraryScreen() {
 
 const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
   StyleSheet.create({
+    centered: {
+      flex: 1,
+      justifyContent: 'center',
+    },
     header: {
       paddingHorizontal: spacing[4],
       paddingTop: spacing[2],

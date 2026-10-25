@@ -2,6 +2,7 @@
  * İzleme ilerlemesi ve favoriler (watchlist) sözleşmeleri (Faz 2b).
  */
 import { z } from 'zod';
+import { pageMetaSchema, pageRequestSchema } from './common';
 import { contentSummarySchema } from './content';
 
 /** PUT /api/v1/watch-progress/:episodeId gövdesi. */
@@ -28,9 +29,23 @@ export const watchProgressItemSchema = z.object({
 });
 export type WatchProgressItem = z.infer<typeof watchProgressItemSchema>;
 
-/** GET /api/v1/watch-progress yanıtı (devam et rayı). */
+/**
+ * GET /api/v1/watch-progress kapsam parametresi (Faz 2c):
+ *   continue → tamamlanmamışlar ("devam et" rayı; varsayılan, Faz 2b davranışı)
+ *   history  → tüm kayıtlar, sayfalı (Planim > Geçmiş)
+ */
+export const watchProgressListParamsSchema = pageRequestSchema.extend({
+  scope: z.enum(['continue', 'history']).default('continue'),
+});
+export type WatchProgressListParams = z.infer<
+  typeof watchProgressListParamsSchema
+>;
+
+/** GET /api/v1/watch-progress yanıtı (devam et rayı + history kapsamı). */
 export const watchProgressListResponseSchema = z.object({
   items: z.array(watchProgressItemSchema).default([]),
+  /** Yalnızca scope=history'de dolu gelir (continue küçük sabit listedir). */
+  meta: pageMetaSchema.optional(),
 });
 export type WatchProgressListResponse = z.infer<
   typeof watchProgressListResponseSchema

@@ -26,7 +26,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { contentApi } from '@/services/adapter';
-import { useContentDetail } from '@/hooks/queries/use-content-detail';
+import { useEpisodeDetail } from '@/hooks/queries/use-episode-detail';
+import { useSaveWatchProgress } from '@/hooks/queries/use-watch-progress';
+import { useAuthStore } from '@/store/auth-store';
 import { queryKeys } from '@/hooks/queries/query-keys';
 import { AppText } from '@/components/ui/app-text';
 import { AppButton } from '@/components/ui/app-button';
@@ -43,53 +45,62 @@ export default function PlayerScreen() {
   const { theme } = useTheme();
   const t = useT();
   const styles = getStyles(theme.colors);
-  const params = useLocalSearchParams<{ episodeId: string; contentId?: string }>();
+  const params = useLocalSearchParams<{ episodeId: string }>();
   const episodeId = typeof params.episodeId === 'string' ? params.episodeId : '';
-  const contentIdParam = typeof params.contentId === 'string' ? params.contentId : '';
 
-  const detail = useContentDetail(contentIdParam);
+  // Faz 2c: bölüm detayı doğrudan sunucudan (GET /catalog/episodes/:id) —
+  // erişim kararı SUNUCUDAN gelir (access.reason), istemci tahmin etmez.
+  const episodeDetail = useEpisodeDetail(episodeId);
+  const serverEpisode = episodeDetail.data;
   const wallet = useQuery({
     queryKey: queryKeys.wallet,
     queryFn: () => contentApi.getWallet(),
   });
+
+  const sessionToken = useAuthStore((state) => state.session?.tokens.accessToken ?? null);
+  const serverSync = useSaveWatchProgress();
 
   const saveProgress = usePlaybackStore((state) => state.saveProgress);
   const savedEntry = usePlaybackStore((state) =>
     state.entries[episodeId]
   );
 
-  const content = detail.data;
+  // Ekranda gösterilecek bölüm: sunucu kararı esas; yerel fallback yoksa
+  // sunucu verisi yokken (çevrimdışı) yerel kayıtlar bilgi verir.
+  const content = serverEpisode?.content;
   const episode = useMemo(() => {
-    if (!content) return undefined;
-    for (const season of content.seasons) {
-      const found = season.episodes.find((entry) => entry.id === episodeId);
-      if (found) return found;
+    if (serverEpisode) {
+      return {
+        id: serverEpisode.id,
+        seasonNumber: serverEpisode.seasonNumber,
+        episodeNumber: serverEpisode.episodeNumber,
+        title: serverEpisode.title,
+        durationSeconds: serverEpisode.durationSeconds,
+        verticalPreviewUrl: serverEpisode.verticalPreviewUrl,
+        accessType: serverEpisode.accessType,
+        creditCost: serverEpisode.creditCost ?? null,
+        access: serverEpisode.access ?? null,
+      };
     }
     return undefined;
-  }, [content, episodeId]);
+  }, [serverEpisode]);
 
-  const nextEpisode = useMemo(() => {
-    if (!content || !episode) return undefined;
-    for (const season of content.seasons) {
-      const idx = season.episodes.findIndex((entry) => entry.id === episodeId);
-      if (idx >= 0 && idx + 1 < season.episodes.length) {
-        return season.episodes[idx + 1];
-      }
-    }
-    return undefined;
-  }, [content, episode, episodeId]);
-
+  // Kilit kararı: sunucu access.canPlay esas (BR-07). Mock cüzdan bilgisi
+  // yalnızca sunucu kararı erişilemezken (offline mock akışı) yedek görevi görür.
   const subscriptionActive =
     wallet.data?.wallet.subscriptionStatus === 'ACTIVE' ||
     wallet.data?.wallet.subscriptionStatus === 'TRIALING';
   const creditBalance = wallet.data?.wallet.creditBalance ?? 0;
   const locked = episode
-    ? episode.accessType === 'SUBSCRIPTION'
-      ? !subscriptionActive
-      : episode.accessType === 'CREDIT'
-        ? creditBalance < CREDIT_EPISODE_COST
-        : false
+    ? episode.access
+      ? !episode.access.canPlay
+      : episode.accessType === 'SUBSCRIPTION'
+        ? !subscriptionActive
+        : episode.accessType === 'CREDIT'
+          ? creditBalance < CREDIT_EPISODE_COST
+          : false
     : true;
+  const creditCost = episode?.creditCost ?? CREDIT_EPISODE_COST;
 
   // ---- Oynatma durumu (simülasyon) ----
   const [playing, setPlaying] = useState(false);
@@ -110,7 +121,7 @@ export default function PlayerScreen() {
   const persist = useCallback(() => {
     if (!content || !episode) return;
     const entry: PlaybackEntry = {
-      contentId: content.id,
+      contentId: content.contentId,
       contentTitle: content.title,
       episodeId: episode.id,
       episodeTitle: episode.title,
@@ -124,7 +135,15 @@ export default function PlayerScreen() {
       updatedAt: Date.now(),
     };
     saveProgress(entry);
-  }, [content, episode, saveProgress]);
+    // Faz 2c: sunucu senkronizasyonu — oturum açıkken watch_history'ye yazılır.
+    // Sessiz uygulanır (ağ hatası yerel kaydı bozmaz; tekrar oynatmada denenir).
+    if (sessionToken) {
+      void serverSync.mutateAsync({
+        episodeId: episode.id,
+        positionSeconds: Math.round(positionRef.current),
+      }).catch(() => undefined);
+    }
+  }, [content, episode, saveProgress, serverSync, sessionToken]);
 
   // Zamanlayıcı: saniyede 1 ilerlet (gerçek akış Faz 4'te oynatıcı konumundan okur).
   useEffect(() => {
@@ -134,7 +153,6 @@ export default function PlayerScreen() {
     }, 1000);
     return () => clearInterval(timer);
   }, [playing, episode]);
-
   // Her 5 saniyede ve uygulama arka plana geçtiğinde ilerlemeyi kaydet.
   useEffect(() => {
     if (!playing) return;
@@ -158,7 +176,7 @@ export default function PlayerScreen() {
     };
   }, [persist]);
 
-  if (detail.isPending) {
+  if (episodeDetail.isPending) {
     return (
       <View style={styles.root}>
         <LoadingView variant="detail" />
@@ -166,7 +184,7 @@ export default function PlayerScreen() {
     );
   }
 
-  if (detail.isError || !content || !episode) {
+  if (episodeDetail.isError || !content || !episode) {
     return (
       <View style={styles.root}>
         <ErrorView
@@ -264,7 +282,7 @@ export default function PlayerScreen() {
             <AppText variant="body" color="textMuted">
               {episode.accessType === 'SUBSCRIPTION'
                 ? t('player.lockedSubscriptionBody')
-                : t('player.lockedCreditBody', { count: CREDIT_EPISODE_COST })}
+                : t('player.lockedCreditBody', { count: creditCost })}
             </AppText>
             <View style={styles.lockActions}>
               {episode.accessType === 'SUBSCRIPTION' ? (
@@ -274,7 +292,7 @@ export default function PlayerScreen() {
                 />
               ) : (
                 <AppButton
-                  label={t('player.unlockWithCredits', { count: CREDIT_EPISODE_COST })}
+                  label={t('player.unlockWithCredits', { count: creditCost })}
                   onPress={() => router.push('/credits')}
                 />
               )}
@@ -299,29 +317,6 @@ export default function PlayerScreen() {
               <AppText variant="caption" color="textSubtle">
                 -{formatDuration(Math.max(0, episode.durationSeconds - position))}
               </AppText>
-            </View>
-            <View style={styles.actions}>
-              {nextEpisode ? (
-                <View style={styles.action}>
-                  <AppButton
-                    label={t('player.nextEpisode')}
-                    variant="secondary"
-                    onPress={() => {
-                      setPlaying(false);
-                      persist();
-                      router.replace({
-                        pathname: '/player/[episodeId]',
-                        params: {
-                          episodeId: nextEpisode.id,
-                          contentId: content.id,
-                        },
-                      });
-                      setPosition(0);
-                      setPlaying(true);
-                    }}
-                  />
-                </View>
-              ) : null}
             </View>
             <AppText variant="caption" color="textSubtle" style={styles.demoNote}>
               {t('player.demoNotice')}

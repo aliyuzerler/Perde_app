@@ -1,12 +1,12 @@
 /**
  * İzleme ilerlemesi (BR-09: kaldığı yerden devam).
  *   PUT  /watch-progress/:episodeId → konum kaydet (upsert)
- *   GET  /watch-progress            → devam et rayı
+ *   GET  /watch-progress            → devam et (scope=continue) | geçmiş (scope=history, sayfalı)
  *   GET  /watch-progress/:episodeId → tek bölüm konumu
  */
 import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
 import {
-  pageRequestSchema,
+  watchProgressListParamsSchema,
   watchProgressPutSchema,
   type WatchProgressPut,
   type WatchProgressListResponse,
@@ -32,14 +32,17 @@ export class WatchProgressController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Devam et listesi (son izlenenler)' })
+  @ApiOperation({
+    summary:
+      'Devam et listesi (scope=continue, varsayılan) veya izleme geçmişi (scope=history, sayfalı)',
+  })
   async list(
     @CurrentUser() user: RequestUser,
     @Query() query: unknown,
     @CurrentLang() lang: Lang,
   ): Promise<WatchProgressListResponse> {
-    const { page, pageSize } = parseQuery(pageRequestSchema, query);
-    return this.progress.list(user.id, page, pageSize, lang);
+    const { page, pageSize, scope } = parseQuery(watchProgressListParamsSchema, query);
+    return this.progress.list(user.id, page, pageSize, lang, scope);
   }
 
   @Get(':episodeId')

@@ -43,6 +43,8 @@ enum AccessType {
 
 enum ContentStatus {
   DRAFT
+  /// Medya transkod işleniyor — herkese açık uçlarda görünmez (Faz 2c).
+  PROCESSING
   PUBLISHED
   ARCHIVED
 }

@@ -1,8 +1,9 @@
 /**
- * Ara: gecikmeli (debounced) arama girişi + sonuç listesi.
- * Tüm durumlar tasarlanmıştır: boş (idle), yükleniyor, sonuçsuz, hata.
+ * Ara: gecikmeli (debounced) arama girişi + sonuç listesi (sonsuz kaydırma).
+ * Tüm durumlar tasarlanmıştır: boş (idle), yükleniyor, sonuçsuz, hata/çevrimdışı.
+ * Faz 2c: sayfalar BİRLEŞTİRİLİR; sunucu kind/category filtreleri desteklidir.
  */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -14,6 +15,7 @@ import { router } from 'expo-router';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { useSearch } from '@/hooks/queries/use-search';
+import { useNetworkStatus, isDefinitelyOffline } from '@/hooks/use-network';
 import { ScreenContainer } from '@/components/screen-container';
 import { PosterCard } from '@/components/ui/poster-card';
 import { AppText } from '@/components/ui/app-text';
@@ -30,81 +32,28 @@ export default function SearchScreen() {
   const { theme } = useTheme();
   const t = useT();
   const styles = getStyles(theme.colors);
+  const network = useNetworkStatus();
 
   const [input, setInput] = useState('');
   const [debounced, setDebounced] = useState('');
-  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebounced(input.trim());
-      setPage(1);
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [input]);
 
-  const search = useSearch({ query: debounced, page });
+  const search = useSearch({ query: debounced });
+  const items = search.data?.pages.flatMap((page) => page.items) ?? [];
+  const offline = isDefinitelyOffline(network.connectivity);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ContentSummary>) => <SearchResultRow item={item} />,
     []
   );
 
-  const body = useMemo(() => {
-    if (debounced.trim().length === 0) {
-      return (
-        <EmptyView
-          title={t('search.idleTitle')}
-          body={t('search.idleBody')}
-          icon="search-outline"
-          style={styles.centered}
-        />
-      );
-    }
-    if (search.isPending) {
-      return <LoadingView variant="list" style={styles.centered} />;
-    }
-    if (search.isError) {
-      const isNetwork =
-        search.error instanceof ApiClientError && search.error.isNetworkFailure;
-      return (
-        <ErrorView
-          kind={isNetwork ? 'network' : 'generic'}
-          title={t('error.networkTitle')}
-          body={t('error.networkBody')}
-          onRetry={() => search.refetch()}
-          style={styles.centered}
-        />
-      );
-    }
-    const items = search.data?.items ?? [];
-    if (items.length === 0) {
-      return (
-        <EmptyView
-          title={t('search.noResultsTitle')}
-          body={t('search.noResultsBody', { query: debounced })}
-          icon="albums-outline"
-          style={styles.centered}
-        />
-      );
-    }
-    return (
-      <FlatList
-        data={items}
-        keyExtractor={(item: ContentSummary) => item.contentId}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.resultList}
-        onEndReached={() => {
-          const meta = search.data?.meta;
-          if (meta?.hasNextPage) {
-            setPage((current) => current + 1);
-          }
-        }}
-        onEndReachedThreshold={0.4}
-      />
-    );
-  }, [debounced, search, t, styles.centered, styles.resultList, renderItem]);
+  const hasQuery = debounced.trim().length > 0;
 
   return (
     <ScreenContainer>
@@ -123,7 +72,60 @@ export default function SearchScreen() {
           />
         </View>
       </View>
-      {body}
+
+      {!hasQuery ? (
+        <EmptyView
+          title={t('search.idleTitle')}
+          body={t('search.idleBody')}
+          icon="search-outline"
+          style={styles.centered}
+        />
+      ) : search.isPending ? (
+        <LoadingView variant="list" style={styles.centered} />
+      ) : search.isError ? (
+        <ErrorView
+          kind={
+            (search.error instanceof ApiClientError && search.error.isNetworkFailure) || offline
+              ? 'network'
+              : 'generic'
+          }
+          title={t('error.networkTitle')}
+          body={t('error.networkBody')}
+          onRetry={() => {
+            network.refresh();
+            void search.refetch();
+          }}
+          style={styles.centered}
+        />
+      ) : items.length === 0 ? (
+        <EmptyView
+          title={t('search.noResultsTitle')}
+          body={t('search.noResultsBody', { query: debounced })}
+          icon="albums-outline"
+          style={styles.centered}
+        />
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item: ContentSummary) => item.contentId}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.resultList}
+          onEndReached={() => {
+            if (search.hasNextPage && !search.isFetchingNextPage) {
+              void search.fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            search.isFetchingNextPage ? (
+              <AppText variant="caption" color="textSubtle" style={styles.loadingMore}>
+                {t('common.loadingMore')}
+              </AppText>
+            ) : undefined
+          }
+        />
+      )}
     </ScreenContainer>
   );
 }
@@ -142,7 +144,7 @@ function SearchResultRow({ item }: { item: ContentSummary }) {
         accessType={item.accessType}
         isNew={item.isNew}
         width={84}
-        onPress={() => router.push({ pathname: '/content/[id]', params: { id: item.contentId } })}
+        onPress={() => router.push({ pathname: '/content/[id]', params: { id: item.slug } })}
       />
       <View style={resultRowStyle.texts}>
         <AppText variant="heading" numberOfLines={1}>
@@ -201,5 +203,9 @@ const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>
     centered: {
       flex: 1,
       justifyContent: 'center',
+    },
+    loadingMore: {
+      textAlign: 'center',
+      paddingVertical: spacing[3],
     },
   });

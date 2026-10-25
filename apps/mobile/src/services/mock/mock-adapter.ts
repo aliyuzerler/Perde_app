@@ -13,31 +13,32 @@ import type {
   AccountDeletionResponse,
   AuthSession,
   AuthSessionListResponse,
-  LoginRequest,
-  CategoryDetailResponse,
-  CategoryListResponse,
-  Content,
-  CreditPacksResponse,
-  FeedResponse,
+  EpisodeDetailResponse,
+  FavoritesListResponse,
+  FavoriteMutationResponse,
+  HomeResponse,
   LegalDocument,
+  LoginRequest,
   PlansResponse,
   PublicUserProfile,
   RegisterRequest,
   SearchParams,
   SearchResponse,
+  TitleDetailResponse,
+  TitleListParams,
+  TitleListResponse,
+  WatchProgressListResponse,
+  WatchProgressPut,
+  CreditPacksResponse,
   WalletResponse,
   WalletTransactionsResponse,
 } from '@perdego/contracts';
-import type { ContentApiPort } from '../ports';
+import type { ContentApiPort, CategoryContentPage } from '../ports';
 import {
   createMockSession,
-  findMockCategory,
-  findMockContent,
   findMockUserByCredentials,
-  mockCategoryList,
   mockCreditPacks,
   mockCreditPacksResponse,
-  mockFeed,
   mockOutbox,
   mockPlansResponse,
   mockProfile,
@@ -46,9 +47,22 @@ import {
   mockWalletState,
   pushMockEmail,
   resetMockUsers,
-  searchMockContent,
   type MockUserRecord,
 } from './mock-data';
+import {
+  findMockEpisodeDetail,
+  findMockTitleDetail,
+  listMockTitles,
+  mockAddFavorite,
+  mockCategoryTitles,
+  mockFavoritesList,
+  mockHome,
+  mockRemoveFavorite,
+  mockSaveProgress,
+  mockWatchProgressList,
+  searchMockCatalog,
+  resetMockCatalogState,
+} from './mock-catalog-state';
 
 export interface MockDevControls {
   /** Bir sonraki isteğin ağ hatasıyla sonuçlanmasını zorlar (hata durumu demosu). */
@@ -70,6 +84,7 @@ export function resetMockAccountState(): void {
   mockOutbox.length = 0;
   mockAccountState.current = null;
   mockAccountState.sessions = [];
+  resetMockCatalogState();
 }
 
 function delay(ms: number): Promise<void> {
@@ -179,32 +194,26 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
   return {
     getProfile: () => mockProfile,
 
-    // ---------------- Katalog ----------------
-    async getFeed(): Promise<FeedResponse> {
-      return respond(mockFeed);
+    // ---------------- Katalog (Faz 2c: gerçek sunucu davranışının mock'u) ----
+    async getFeed(): Promise<HomeResponse> {
+      return respond(mockHome());
+    },
+
+    async listTitles(params: TitleListParams): Promise<TitleListResponse> {
+      return respond(listMockTitles(params));
     },
 
     async searchContent(params: SearchParams): Promise<SearchResponse> {
-      return respond(searchMockContent(params.query, params.page, params.pageSize));
+      return respond(
+        searchMockCatalog(params.query, params.page, params.pageSize, {
+          kind: params.kind,
+          category: params.category,
+        })
+      );
     },
 
-    async getContentDetail(contentId: string): Promise<Content> {
-      const content = findMockContent(contentId);
-      if (!content) {
-        const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
-        notFound.statusCode = 404;
-        await delay(randomLatency());
-        throw notFound;
-      }
-      return respond(content);
-    },
-
-    async getCategories(): Promise<CategoryListResponse> {
-      return respond(mockCategoryList);
-    },
-
-    async getCategoryContent(slug: string): Promise<CategoryDetailResponse> {
-      const detail = findMockCategory(slug);
+    async getTitleDetail(slug: string): Promise<TitleDetailResponse> {
+      const detail = findMockTitleDetail(slug);
       if (!detail) {
         const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
         notFound.statusCode = 404;
@@ -212,6 +221,102 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
         throw notFound;
       }
       return respond(detail);
+    },
+
+    async getEpisodeDetail(episodeId: string): Promise<EpisodeDetailResponse> {
+      const episode = findMockEpisodeDetail(episodeId);
+      if (!episode) {
+        const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
+        notFound.statusCode = 404;
+        await delay(randomLatency());
+        throw notFound;
+      }
+      return respond(episode);
+    },
+
+    async getCategories() {
+      // Kategori listesi görünür içeriklerden türetilir (arşiv/boş katalog saygılı).
+      const home = mockHome();
+      const counts = new Map<string, number>();
+      for (const section of home.sections) {
+        for (const item of section.items) {
+          for (const genre of item.genres) counts.set(genre, (counts.get(genre) ?? 0) + 1);
+        }
+      }
+      const items = [...counts.entries()].map(([slug, count]) => ({
+        slug,
+        name: slug.replace(/-/g, ' '),
+        contentCount: count,
+      }));
+      return respond({ items });
+    },
+
+    async getCategoryContent(
+      slug: string,
+      page: number,
+      pageSize: number
+    ): Promise<CategoryContentPage> {
+      const detail = mockCategoryTitles(slug, page, pageSize);
+      if (!detail.found) {
+        const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
+        notFound.statusCode = 404;
+        await delay(randomLatency());
+        throw notFound;
+      }
+      return respond({
+        category: detail.category,
+        items: detail.items,
+        meta: detail.meta,
+      });
+    },
+
+    // ---------------- Favoriler ve izleme (Faz 2c mock) ----------------
+    async getFavorites(): Promise<FavoritesListResponse> {
+      if (!mockAccountState.current) throw unauthorized();
+      return respond({ items: mockFavoritesList() });
+    },
+
+    async addFavorite(contentId: string): Promise<FavoriteMutationResponse> {
+      if (!mockAccountState.current) throw unauthorized();
+      const response = mockAddFavorite(contentId);
+      if (!response) {
+        throw domainError(404, 'errors.contentNotFound', 'CONTENT_NOT_FOUND');
+      }
+      return respond(response);
+    },
+
+    async removeFavorite(contentId: string): Promise<FavoriteMutationResponse> {
+      if (!mockAccountState.current) throw unauthorized();
+      const response = mockRemoveFavorite(contentId);
+      if (!response) {
+        throw domainError(404, 'errors.contentNotFound', 'CONTENT_NOT_FOUND');
+      }
+      return respond(response);
+    },
+
+    async getWatchProgress(params: {
+      scope: 'continue' | 'history';
+      page: number;
+      pageSize: number;
+    }): Promise<WatchProgressListResponse> {
+      if (!mockAccountState.current) throw unauthorized();
+      return respond(mockWatchProgressList(params.scope, params.page, params.pageSize));
+    },
+
+    async saveWatchProgress(
+      episodeId: string,
+      input: WatchProgressPut
+    ): Promise<{ saved: true; completed: boolean }> {
+      if (!mockAccountState.current) throw unauthorized();
+      const response = mockSaveProgress({
+        episodeId,
+        positionSeconds: input.positionSeconds,
+        completed: input.completed,
+      });
+      if (!response) {
+        throw domainError(404, 'errors.episodeNotFound', 'EPISODE_NOT_FOUND');
+      }
+      return respond(response);
     },
 
     // ---------------- Abonelik ve kredi (mock) ----------------

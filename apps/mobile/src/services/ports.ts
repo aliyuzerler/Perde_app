@@ -5,16 +5,23 @@
  * Ekranlar ve hook'lar yalnızca bu arayüzü bilir; adapter seçimi `adapter.ts`
  * fabrikasında yapılır. Kural: ekranlar asla doğrudan mock veriye erişmez;
  * örnek veri yalnızca bu portun ardındaki mock adapter içinde yaşar.
+ *
+ * Faz 2c: katalog uçları gerçek sunucu sözleşmesiyle hizalandı —
+ * /home, /catalog/titles, /catalog/titles/:slug, /catalog/episodes/:id,
+ * /search (kind/category filtreli), /catalog/categories, favoriler
+ * (/watchlist) ve izleme ilerlemesi (/watch-progress, scope=continue|history).
  */
 import type {
-  AuthSession,
   AccountDeletionResponse,
+  AuthSession,
   AuthSessionListResponse,
   CategoryDetailResponse,
   CategoryListResponse,
-  Content,
   CreditPacksResponse,
-  FeedResponse,
+  EpisodeDetailResponse,
+  FavoritesListResponse,
+  FavoriteMutationResponse,
+  HomeResponse,
   LegalDocument,
   LoginRequest,
   PlansResponse,
@@ -22,22 +29,60 @@ import type {
   RegisterRequest,
   SearchParams,
   SearchResponse,
+  TitleDetailResponse,
+  TitleListParams,
+  TitleListResponse,
+  WatchProgressListResponse,
+  WatchProgressPut,
   WalletResponse,
   WalletTransactionsResponse,
+  PageMeta,
 } from '@perdego/contracts';
 
+/** Sayfalı kategori içeriği (meta ile). */
+export type CategoryContentPage = CategoryDetailResponse & { meta?: PageMeta };
+
+/** Kütüphane sorgu kapsamı. */
+export type WatchScope = 'continue' | 'history';
+
 export interface ContentApiPort {
-  // ---------- Katalog ----------
-  /** Ana sayfa bölümleri (hero + yatay raylar). */
-  getFeed(): Promise<FeedResponse>;
-  /** Arama yapar. */
+  // ---------- Katalog (Faz 2c: gerçek uçlar) ----------
+  /** Ana sayfa: banner'lar + bölüm rayları (GET /home). */
+  getFeed(): Promise<HomeResponse>;
+  /** Sayfalı/filtreli içerik listesi (GET /catalog/titles — keşfet ızgarası). */
+  listTitles(params: TitleListParams): Promise<TitleListResponse>;
+  /** Arama (GET /search — kind/category filtreleri opsiyonel). */
   searchContent(params: SearchParams): Promise<SearchResponse>;
-  /** İçerik detayını getirir. */
-  getContentDetail(contentId: string): Promise<Content>;
-  /** Kategori listesi (keşfet sayfası). */
+  /** İçerik detayı: sezonlar + erişim kararlı bölümler (GET /catalog/titles/:slug). */
+  getTitleDetail(slug: string): Promise<TitleDetailResponse>;
+  /** Bölüm detayı + sunucu erişim kararı (GET /catalog/episodes/:id). */
+  getEpisodeDetail(episodeId: string): Promise<EpisodeDetailResponse>;
+  /** Kategori listesi (GET /catalog/categories). */
   getCategories(): Promise<CategoryListResponse>;
-  /** Bir kategorinin içerikleri. */
-  getCategoryContent(slug: string): Promise<CategoryDetailResponse>;
+  /** Bir kategorinin içerikleri (GET /catalog/categories/:slug/titles — sayfalı). */
+  getCategoryContent(slug: string, page: number, pageSize: number): Promise<CategoryContentPage>;
+
+  // ---------- Favoriler ve izleme ilerlemesi (Faz 2c: gerçek uçlar) ----------
+  /** Favori listesi (GET /watchlist — kimlik gerekir). */
+  getFavorites(): Promise<FavoritesListResponse>;
+  /** Favoriye ekle (POST /watchlist/:contentId — idempotent). */
+  addFavorite(contentId: string): Promise<FavoriteMutationResponse>;
+  /** Favoriden çıkar (DELETE /watchlist/:contentId — idempotent). */
+  removeFavorite(contentId: string): Promise<FavoriteMutationResponse>;
+  /**
+   * İzleme listesi (GET /watch-progress). scope=continue → devam et rayı;
+   * scope=history → tüm kayıtlar (sayfalı, meta döner). Kimlik gerekir.
+   */
+  getWatchProgress(params: {
+    scope: WatchScope;
+    page: number;
+    pageSize: number;
+  }): Promise<WatchProgressListResponse>;
+  /** Oynatma konumunu sunucuya kaydet (PUT /watch-progress/:episodeId). */
+  saveWatchProgress(
+    episodeId: string,
+    input: WatchProgressPut,
+  ): Promise<{ saved: true; completed: boolean }>;
 
   // ---------- Abonelik ve kredi (mock; gerçek ödeme Faz 5) ----------
   /** Abonelik planları (paywall). */

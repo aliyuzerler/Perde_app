@@ -385,3 +385,25 @@ Stage Summary:
 - Üretilen: contracts +40 şema/17 test; api 15+ yeni uç/3 yeni dosya/1 migration; admin 10 sayfa + lib + components; dev-stack; docs/phases/FAZ-8.md; ROADMAP/README güncellemeleri.
 - Dürüst sınırlar: gerçek mağaza ödemesi yok (RC sandbox yok — FAZ 7 sınırı sürüyor); push tünellemesi sonraki faz; MEDIA_PROVIDER=local.
 - Sonraki ajan için: `bash scripts/dev-stack.sh` tek komutla tüm yığını kaldırır (admin@perdego.dev / Admin12345). RC sandbox açılırsa BILLING_SETUP §2-6 + QA acceptance yeniden koşulmalı; push tünellemesi (Expo Notifications) bildirim kampanya altyapısına hazır (campaignId dataJson'da).
+
+---
+Task ID: 9
+Agent: Ana ajan (Z.ai)
+Task: FAZ 8 Testi (Admin Paneli) — gerçek backend CRUD uçtan uca kabul doğrulaması
+
+Work Log:
+- Doğrulanan faz: FAZ 8 (commit 9c21ff9). Ortam: gömülü PG 16 ayaktaydı, migration'lar güncel (6), admin production build + API dist yeniden derlendi.
+- ORTAM TUZAKLARI: (1) önceki oturumdan kalma `next dev` (pid 10371) 3000'i işgal ediyordu — runner'lara port temizliği eklendi; (2) sandbox arka plan süreçleri araç çağrıları arası öldürüldüğünden tüm koşumlar tek çağrıda biten runner'lara alındı (qa-faz8-run-acceptance.sh, qa-faz8-run-ui-e2e.sh); (3) auth rate limit (5/dk) probe bütçesini aşıyordu — yalnız QA env'inde gevşetildi, 429 davranışı ayrıca gözlendi.
+- Statik: typecheck 4/4, lint 4/4. Testler: 470/470 (contracts 88 + api 240 [gerçek PG] + mobile 142). Build: api ✅, admin İLK KOŞUMDA KIRIKTI.
+- BULUNAN VE DÜZELTİLEN KUSUR F8-QA-01 (YÜKSEK): admin production build kırıktı (geliştirme fazında yalnız next dev koşulduğu için yakalanmamıştı). Üç kök neden: (a) /titles'da useState başlatıcısında new Date() → prerender hatası (yıl modal açılışına taşındı); (b) /titles/[id] + /users/[id]'de useParams Suspense'siz → CLIENT_HOOK_DYNAMIC (Suspense sınırı eklendi, ◐ Partial Prerender); (c) /revenue + /notifications'da render anında readSession() → hidrasyon uyuşmazlığı (lib/use-session.ts useSyncExternalStore hook'u yazıldı). next build 13/13, tsc+eslint temiz.
+- Yeni kabul araçları: scripts/qa-faz8-acceptance-probe.mjs (12 madde, 102 kontrol; doğrudan API RBAC + panel proxy köprüsü) + qa-faz8-run-acceptance.sh (PG→API→admin production→probe→DB denetimi→teardown) + qa-faz8-ui-e2e.py (Playwright, 19 kontrol: form doğrulama/hata-yükleme durumları, EDITOR RBAC görünürlüğü, oturum kalıcılığı, tablet 768px; 8 ekran görüntüsü) + qa-faz8-cleanup-p2c-rerun.sh.
+- KABUL KOŞUMU: 102/102 PASS — giriş/oturum (yanlış parola 401, sahte refresh 401), RBAC (anonim 401, USER 403 ADMIN_ONLY, EDITOR finansal yazma 403 + kendi step-up'ıyla bile 403), yapım CRUD + katalog görünürlük ayrımı (taslak gizli/yayın görünür + geçersiz geçiş 400), sezon/bölüm (409'lar, sıralı, matris, yayında silinemez 409), erişim modeli (CREDIT cost'suz 400, DB'de FREE/SUB/CREDIT+25 kanıtlı), plan/paket step-up (401 STEP_UP_REQUIRED, fiyat 5490→4990 geri), satın alma/ledger filtreleri, kredi düzeltmesi (ledger GRANT/ADMIN_ADJUSTMENT +5), kampanya SENT(alıcı 3)/SCHEDULED/CANCELLED, audit (CONTENT_UPDATE önce/sonra, PLAN_UPDATE 5490 izi, USER_STATUS_CHANGE ×2, CAMPAIGN_SENT, actorId filtresi, self-role 409), bozuk istekler (JSON 400, sahte token 401/403, yabancı step-up 403, SQL/XSS desenleri güvenli), panel proxy köprüsü (login+dashboard+step-up'lı yazma).
+- UI E2E: 19/19 PASS (production admin). DB denetimi: 21 audit eylem türü, 3 bildirim satırı, ledger izi, bölüm erişim alanları PostgreSQL'de doğrulandı.
+- REGRESYON: faz4 medya 44/44, faz6 güvenlik 18/18, faz7 kabul 42/42, P2C 41/41 (kendi qa8-* verim katalog sıralamasını bozmuştu → temizlik + tekrar; ürün etkilenmedi), F5 16/16, AUTH 22/22.
+- Araç kalibrasyonu: POST=201 zarfı, error.code genel + details.reason spesifik, step-up'sız kritik uç 401 (tasarım), audit eylem adları (CONTENT_UPDATE/PLAN_UPDATE/USER_STATUS_CHANGE), pozitif kredi düzeltmesi ledger GRANT.
+- Rapor: docs/qa/FAZ-8-QA.md (PASS WITH WARNINGS). Ürün değişikliği: yalnız F8-QA-01 kapsamı (5 admin UI dosyası + lib/use-session.ts).
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriteri (temel CRUD gerçek backend verisiyle + yetkisizler backend'de kesiliyor) canlı kanıtla sağlandı; tek YÜKSEK kusur (production build kırığı) düzeltildi ve regresyonla doğrulandı.
+- Dürüst sınırlar: gerçek push teslimi (APNs/FCM tüneli yok), RC sandbox'lı gerçek mağaza satın alması, gerçek cihaz/EAS doğrulanamadı; video yükleme akışı faz4/6 probe regresyonuyla kanıtlandı.
+- Sonraki ajan için: kabul koşumu `bash scripts/qa-faz8-run-acceptance.sh` + `bash scripts/qa-faz8-run-ui-e2e.sh`; koşum sonrası qa8-* verisi kalır → katalog sayımlı önceki-faz probe'ları öncesi qa-faz8-cleanup-p2c-rerun.sh §1 bloğu; admin UI'da render anında readSession() YASAK — lib/use-session.ts kullanın; useParams Suspense içinde kalmalı (cacheComponents).

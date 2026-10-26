@@ -9,7 +9,8 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ApiError, api, fieldErrors, formatDateTime, readSession } from "@/lib/api";
+import { ApiError, api, fieldErrors, formatDateTime } from "@/lib/api";
+import { useIsAdmin } from "@/lib/use-session";
 import { AppShell } from "@/components/shell";
 import {
   Button,
@@ -55,7 +56,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function NotificationsPage() {
   const { push } = useToast();
   const { run } = useStepUp();
-  const isAdmin = readSession()?.user.role === "ADMIN";
+  const isAdmin = useIsAdmin();
 
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -19,6 +19,6 @@ PASS · hesap silme talebi 201 + purgeAt
 PASS · silme sonrası giriş 401
 PASS · restore 201 + oturum
 PASS · rate limit 429 RATE_LIMITED
-PASS · Swagger yeni uçları içeriyor — 73 yol
+PASS · Swagger yeni uçları içeriyor — 93 yol
 
 22/22 probe geçti

@@ -104,7 +104,9 @@ export default function TitlesPage() {
     titleEn: "",
     synopsisTr: "",
     synopsisEn: "",
-    releaseYear: String(new Date().getFullYear()),
+    // Not: `new Date()` prerender'da değerlendirildiği için başlangıç boş;
+    // güncel yıl, modal açıldığında (kullanıcı etkileşimi) doldurulur.
+    releaseYear: "",
     ageRating: "",
     accessType: "FREE",
   });
@@ -213,7 +215,14 @@ export default function TitlesPage() {
               {data ? `${data.meta.totalItems} kayıt` : "…"} · taslak/işleniyor kayıtları herkese açık uçlarda görünmez
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>+ Yeni Yapım</Button>
+          <Button
+            onClick={() => {
+              setForm((f) => (f.releaseYear === "" ? { ...f, releaseYear: String(new Date().getFullYear()) } : f));
+              setCreateOpen(true);
+            }}
+          >
+            + Yeni Yapım
+          </Button>
         </div>
 
         <Card className="mb-5 flex flex-wrap items-end gap-3 p-4">

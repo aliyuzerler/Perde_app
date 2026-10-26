@@ -1,0 +1,97 @@
+[
+  {
+    "step": "U1 boş form → alan hataları görünür",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U2 yanlış parola → hata uyarısı (role=alert)",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U3 admin girişi → Panel Özeti",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U3b tarih aralığı denetimi",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U4 Toplam Kullanıcı kartı veriyle dolu",
+    "status": "PASS",
+    "detail": "kart='TOPLAM KULLANICI\\n\\n3\\n\\n+3 (aralıkta) · 3 a'"
+  },
+  {
+    "step": "U5 reload sonrası oturum korunur",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U6 boş yapım formu → sunucu doğrulama hataları görüntülenir",
+    "status": "PASS",
+    "detail": "hata öğesi=5"
+  },
+  {
+    "step": "U7 UI ile taslak oluşturuldu → detay sayfası açıldı",
+    "status": "PASS",
+    "detail": "id=cmvp1oaat000…"
+  },
+  {
+    "step": "U8 detay bilgisi kaydedildi (başarı bildirimi)",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U9 ADMIN için Düzenle etkin",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U9b step-up diyaloğu açılıyor (kritik işlem onayı)",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U10 kullanıcı arama sonuç verir",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U11 audit log tablosu kayıtlı",
+    "status": "PASS",
+    "detail": "satır=28"
+  },
+  {
+    "step": "U12 çıkış → /login",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U13 EDITOR'e dürüst uyarı metni",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U13b EDITOR'de Düzenle devre dışı (disabled)",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U13c EDITOR'de kampanya aksiyonu devre dışı",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U14 tablette menü butonu görünür (çekmece kapalı)",
+    "status": "PASS",
+    "detail": ""
+  },
+  {
+    "step": "U14b tablette tablo kullanılabilir",
+    "status": "PASS",
+    "detail": ""
+  }
+]

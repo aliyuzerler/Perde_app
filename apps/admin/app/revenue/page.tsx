@@ -12,7 +12,8 @@
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ApiError, api, fieldErrors, formatDateTime, formatKurus, readSession } from "@/lib/api";
+import { ApiError, api, fieldErrors, formatDateTime, formatKurus } from "@/lib/api";
+import { useIsAdmin } from "@/lib/use-session";
 import { AppShell } from "@/components/shell";
 import {
   Badge,
@@ -112,7 +113,7 @@ const TABS = [
 
 export default function RevenuePage() {
   const [tab, setTab] = useState("plans");
-  const isAdmin = readSession()?.user.role === "ADMIN";
+  const isAdmin = useIsAdmin();
 
   return (
     <AppShell>
@@ -142,7 +143,7 @@ export default function RevenuePage() {
 // --- Planlar --------------------------------------------------------------------
 
 function PlansTab() {
-  const isAdmin = readSession()?.user.role === "ADMIN";
+  const isAdmin = useIsAdmin();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Plan | null>(null);
@@ -328,7 +329,7 @@ function PlanEditModal({ plan, onClose, onSaved }: { plan: Plan; onClose: () => 
 // --- Kredi paketleri ---------------------------------------------------------------
 
 function PacksTab() {
-  const isAdmin = readSession()?.user.role === "ADMIN";
+  const isAdmin = useIsAdmin();
   const [packs, setPacks] = useState<CreditPack[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<CreditPack | null>(null);

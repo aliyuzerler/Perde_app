@@ -14,7 +14,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, api, fieldErrors, formatDateTime, readSession, uploadFile } from "@/lib/api";
 import { AppShell } from "@/components/shell";
 import {
@@ -119,6 +119,16 @@ const EPISODE_STATUS_LABEL: Record<string, string> = {
 };
 
 export default function TitleDetailPage() {
+  // `useParams` cacheComponents altında dinamik okumadır; prerender'ın
+  // kırılmaması için sayfa gövdesi Suspense sınırının içine alınır.
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-[var(--pg-text-dim)]">Yükleniyor…</div>}>
+      <TitleDetailInner />
+    </Suspense>
+  );
+}
+
+function TitleDetailInner() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { push } = useToast();

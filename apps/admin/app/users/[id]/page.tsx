@@ -10,7 +10,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, api, fieldErrors, formatDateTime, readSession } from "@/lib/api";
 import { AppShell } from "@/components/shell";
 import {
@@ -67,6 +67,15 @@ interface UserDetail {
 }
 
 export default function UserDetailPage() {
+  // `useParams` dinamik okuma; prerender güvenliği için Suspense sınırı.
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-[var(--pg-text-dim)]">Yükleniyor…</div>}>
+      <UserDetailInner />
+    </Suspense>
+  );
+}
+
+function UserDetailInner() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { push } = useToast();

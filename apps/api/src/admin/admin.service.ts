@@ -182,8 +182,12 @@ export class AdminService {
     return updated;
   }
 
-  /** Denetim günlüğü listesi (sayfalı). */
-  async listAuditLogs(page: number, pageSize: number, filters?: { entityType?: string; entityId?: string }) {
+  /** Denetim günlüğü listesi (sayfalı; FAZ 8: action/actorId filtreleri). */
+  async listAuditLogs(
+    page: number,
+    pageSize: number,
+    filters?: { entityType?: string; entityId?: string; action?: string; actorUserId?: string },
+  ) {
     const { rows, total } = await this.audit.list(page, pageSize, filters);
     return {
       items: rows.map((row) => ({
@@ -524,7 +528,11 @@ export class AdminService {
         contentLimit: row.contentLimit,
         sortOrder: row.sortOrder,
         isActive: row.isActive,
-        items: row.items.map((item) => toContentSummary(item.content, lang, this.env.PUBLIC_BASE_URL)),
+        // FAZ 8: item kimliği de döner — panelden listeden çıkarma gerekir.
+        items: row.items.map((item) => ({
+          ...toContentSummary(item.content, lang, this.env.PUBLIC_BASE_URL),
+          itemId: item.id,
+        })),
       })),
     };
   }
@@ -700,6 +708,1100 @@ export class AdminService {
       before: { sectionId: item.sectionId, contentId: item.contentId },
     });
     return { ok: true as const, id: itemId };
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Yönetim paneli: dashboard, yapım/sezon/bölüm düzenleme,
+  // gelir modeli, kullanıcı yönetimi. Tüm eylemler audit_logs'a yazılır.
+  // ---------------------------------------------------------------------------
+
+  // ------------------------- Dashboard ---------------------------------------
+
+  /** Panel özeti: kullanıcılar, abonelikler, katalog, satın alma/kredi
+   * özetleri, günlük seriler ve son denetim kayıtları. */
+  async getDashboard(params: { from: Date; to: Date }) {
+    const { from, to } = params;
+    const inRange = { gte: from, lte: to };
+
+    const [
+      usersTotal,
+      usersActive,
+      usersSuspended,
+      usersNewInRange,
+      subsActive,
+      subsTrialing,
+      subsCanceled,
+      subsExpired,
+      subsGrace,
+      titlesPublished,
+      titlesDraft,
+      titlesProcessing,
+      titlesArchived,
+      episodesTotal,
+      episodesPublished,
+      txTotalCount,
+      txTotalAgg,
+      txInRangeCount,
+      txInRangeAgg,
+      refundAgg,
+      txSubCount,
+      txPackCount,
+      ledgerInRange,
+      balanceAgg,
+      recentAudit,
+    ] = await Promise.all([
+      this.prisma.user.count({ where: { status: { not: 'DELETED' } } }),
+      this.prisma.user.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.user.count({ where: { status: 'SUSPENDED' } }),
+      this.prisma.user.count({ where: { createdAt: inRange } }),
+      this.prisma.subscription.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.subscription.count({ where: { status: 'TRIALING' } }),
+      this.prisma.subscription.count({ where: { status: 'CANCELED' } }),
+      this.prisma.subscription.count({ where: { status: 'EXPIRED' } }),
+      this.prisma.subscription.count({ where: { status: 'GRACE_PERIOD' } }),
+      this.prisma.content.count({ where: { status: 'PUBLISHED' } }),
+      this.prisma.content.count({ where: { status: 'DRAFT' } }),
+      this.prisma.content.count({ where: { status: 'PROCESSING' } }),
+      this.prisma.content.count({ where: { status: 'ARCHIVED' } }),
+      this.prisma.episode.count(),
+      this.prisma.episode.count({ where: { status: 'PUBLISHED' } }),
+      this.prisma.storeTransaction.count({ where: { purchaseState: 'PURCHASED' } }),
+      this.prisma.storeTransaction.aggregate({
+        where: { purchaseState: 'PURCHASED' },
+        _sum: { priceKurus: true },
+      }),
+      this.prisma.storeTransaction.count({ where: { purchaseState: 'PURCHASED', createdAt: inRange } }),
+      this.prisma.storeTransaction.aggregate({
+        where: { purchaseState: 'PURCHASED', createdAt: inRange },
+        _sum: { priceKurus: true },
+      }),
+      this.prisma.storeTransaction.aggregate({
+        where: { refundedAt: { not: null } },
+        _count: { _all: true },
+        _sum: { priceKurus: true },
+      }),
+      this.prisma.storeTransaction.count({ where: { purchaseState: 'PURCHASED', productType: 'SUBSCRIPTION' } }),
+      this.prisma.storeTransaction.count({ where: { purchaseState: 'PURCHASED', productType: 'CREDIT_PACK' } }),
+      this.prisma.creditLedger.groupBy({
+        by: ['type'],
+        where: { createdAt: inRange },
+        _sum: { delta: true, purchasedDelta: true, grantedDelta: true },
+      }),
+      this.prisma.creditWallet.aggregate({
+        _sum: { purchasedBalance: true, grantedBalance: true },
+      }),
+      this.audit.list(1, 8),
+    ]);
+
+    const ledgerSum = (type: string) =>
+      ledgerInRange.find((g) => g.type === type)?._sum.delta ?? 0;
+
+    // Günlük seriler (maks. 62 gün): kayıt, gelir, açma.
+    const dayCount = Math.min(
+      62,
+      Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000)),
+    );
+    const seriesRaw = await this.prisma.$queryRaw<
+      Array<{ day: string; signups: bigint; revenue: bigint; unlocks: bigint }>
+    >`
+      WITH days AS (
+        SELECT generate_series(
+          date_trunc('day', ${from}::timestamptz),
+          date_trunc('day', ${to}::timestamptz),
+          interval '1 day'
+        ) AS day
+      )
+      SELECT
+        to_char(days.day, 'YYYY-MM-DD') AS day,
+        (SELECT COUNT(*) FROM users u
+          WHERE u."createdAt" >= days.day AND u."createdAt" < days.day + interval '1 day') AS signups,
+        (SELECT COALESCE(SUM(t."priceKurus"), 0) FROM store_transactions t
+          WHERE t."purchaseState" = 'PURCHASED'
+            AND t."createdAt" >= days.day AND t."createdAt" < days.day + interval '1 day') AS revenue,
+        (SELECT COUNT(*) FROM episode_unlocks e
+          WHERE e."createdAt" >= days.day AND e."createdAt" < days.day + interval '1 day') AS unlocks
+      FROM days
+      ORDER BY days.day ASC
+      LIMIT ${dayCount}
+    `;
+
+    return {
+      range: { from: from.toISOString(), to: to.toISOString() },
+      users: {
+        total: usersTotal,
+        active: usersActive,
+        suspended: usersSuspended,
+        newInRange: usersNewInRange,
+      },
+      subscriptions: {
+        active: subsActive,
+        trialing: subsTrialing,
+        canceled: subsCanceled,
+        expired: subsExpired,
+        gracePeriod: subsGrace,
+      },
+      catalog: {
+        publishedTitles: titlesPublished,
+        draftTitles: titlesDraft,
+        processingTitles: titlesProcessing,
+        archivedTitles: titlesArchived,
+        totalEpisodes: episodesTotal,
+        publishedEpisodes: episodesPublished,
+      },
+      purchases: {
+        inRangeCount: txInRangeCount,
+        inRangeRevenueKurus: txInRangeAgg._sum.priceKurus ?? 0,
+        totalCount: txTotalCount,
+        totalRevenueKurus: txTotalAgg._sum.priceKurus ?? 0,
+        refundCount: refundAgg._count._all,
+        refundedAmountKurus: refundAgg._sum.priceKurus ?? 0,
+        subscriptionCount: txSubCount,
+        creditPackCount: txPackCount,
+      },
+      credits: {
+        grantedInRange: Math.max(0, ledgerSum('GRANT')),
+        purchasedInRange: Math.max(0, ledgerSum('PURCHASE')),
+        spentInRange: Math.max(0, -ledgerSum('UNLOCK_SPEND')),
+        refundAdjustInRange: Math.max(0, -ledgerSum('REFUND')),
+        balancePurchased: balanceAgg._sum.purchasedBalance ?? 0,
+        balanceGranted: balanceAgg._sum.grantedBalance ?? 0,
+      },
+      series: seriesRaw.map((row) => ({
+        day: String(row.day),
+        signups: Number(row.signups),
+        revenueKurus: Number(row.revenue),
+        unlocks: Number(row.unlocks),
+      })),
+      recentAudit: recentAudit.rows.map((row) => ({
+        id: row.id,
+        actorUserId: row.actorUserId,
+        action: row.action,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // ------------------------- Yapım düzenleme ---------------------------------
+
+  /** Yapım düzenleme (afiş, başlık, açıklama, kategori, erişim modeli). */
+  async updateTitle(
+    contentId: string,
+    dto: {
+      titleTr?: string;
+      titleEn?: string;
+      originalTitle?: string | null;
+      synopsisTr?: string;
+      synopsisEn?: string;
+      taglineTr?: string | null;
+      taglineEn?: string | null;
+      releaseYear?: number;
+      ageRating?: string | null;
+      durationSeconds?: number | null;
+      posterUrl?: string | null;
+      heroImageUrl?: string | null;
+      verticalPreviewUrl?: string | null;
+      accessType?: 'FREE' | 'SUBSCRIPTION' | 'CREDIT';
+      seriesFormat?: 'STANDARD' | 'MINI' | null;
+      categorySlugs?: string[];
+    },
+    actorUserId: string,
+  ) {
+    const before = await this.prisma.content.findUnique({
+      where: { id: contentId },
+      include: { categories: { include: { category: { select: { slug: true } } } } },
+    });
+    if (!before) {
+      throw DomainError.notFound('CONTENT_NOT_FOUND', 'errors.contentNotFound', { contentId });
+    }
+
+    if (before.kind === 'SERIES') {
+      const nextFormat = dto.seriesFormat ?? before.seriesFormat;
+      if (!nextFormat) {
+        throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+          fields: [{ path: 'seriesFormat', message: 'SERIES için seriesFormat zorunludur' }],
+        });
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.content.update({
+        where: { id: contentId },
+        data: {
+          titleTr: dto.titleTr,
+          titleEn: dto.titleEn,
+          originalTitle: dto.originalTitle,
+          synopsisTr: dto.synopsisTr,
+          synopsisEn: dto.synopsisEn,
+          taglineTr: dto.taglineTr,
+          taglineEn: dto.taglineEn,
+          releaseYear: dto.releaseYear,
+          ageRating: dto.ageRating,
+          durationSeconds: dto.durationSeconds,
+          posterUrl: dto.posterUrl,
+          heroImageUrl: dto.heroImageUrl,
+          verticalPreviewUrl: dto.verticalPreviewUrl,
+          accessType: dto.accessType,
+          seriesFormat: dto.seriesFormat,
+        },
+      });
+      if (dto.categorySlugs) {
+        await tx.contentCategory.deleteMany({ where: { contentId } });
+        const categories = await tx.category.findMany({
+          where: { slug: { in: dto.categorySlugs } },
+          select: { id: true },
+        });
+        if (categories.length > 0) {
+          await tx.contentCategory.createMany({
+            data: categories.map((c) => ({ contentId, categoryId: c.id })),
+            skipDuplicates: true,
+          });
+        }
+      }
+      return row;
+    });
+
+    await this.audit.log({
+      actorUserId,
+      action: 'CONTENT_UPDATE',
+      entityType: 'content',
+      entityId: contentId,
+      before: { titleTr: before.titleTr, accessType: before.accessType, posterUrl: before.posterUrl },
+      after: {
+        titleTr: updated.titleTr,
+        accessType: updated.accessType,
+        posterUrl: updated.posterUrl,
+        categories: dto.categorySlugs,
+      },
+    });
+    return { ok: true as const, id: updated.id };
+  }
+
+  /** Yapım yönetim detayı: kategoriler + sezonlar + bölümler + medya durumu. */
+  async getTitleDetail(contentId: string) {
+    const row = await this.prisma.content.findUnique({
+      where: { id: contentId },
+      include: {
+        categories: { include: { category: { select: { id: true, slug: true, nameTr: true, nameEn: true } } } },
+        seasons: {
+          orderBy: { seasonNumber: 'asc' },
+          include: {
+            episodes: {
+              orderBy: { episodeNumber: 'asc' },
+              include: { media: { orderBy: { createdAt: 'desc' } } },
+            },
+          },
+        },
+        episodes: { select: { id: true } },
+      },
+    });
+    if (!row) {
+      throw DomainError.notFound('CONTENT_NOT_FOUND', 'errors.contentNotFound', { contentId });
+    }
+
+    // Sezonsuz bölümler (FILM/SHORT_FILM) için yalnız sezona bağlı bölümler
+    // seasons.episodes ile gelir; FILM tek sezon modeli kullanmaz.
+    return {
+      id: row.id,
+      slug: row.slug,
+      kind: row.kind,
+      seriesFormat: row.seriesFormat,
+      titleTr: row.titleTr,
+      titleEn: row.titleEn,
+      originalTitle: row.originalTitle,
+      synopsisTr: row.synopsisTr,
+      synopsisEn: row.synopsisEn,
+      taglineTr: row.taglineTr,
+      taglineEn: row.taglineEn,
+      releaseYear: row.releaseYear,
+      ageRating: row.ageRating,
+      durationSeconds: row.durationSeconds,
+      posterUrl: row.posterUrl,
+      heroImageUrl: row.heroImageUrl,
+      verticalPreviewUrl: row.verticalPreviewUrl,
+      accessType: row.accessType,
+      status: row.status,
+      publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      categories: row.categories.map((c) => ({
+        id: c.category.id,
+        slug: c.category.slug,
+        nameTr: c.category.nameTr,
+        nameEn: c.category.nameEn,
+      })),
+      seasons: row.seasons.map((season) => ({
+        id: season.id,
+        seasonNumber: season.seasonNumber,
+        titleTr: season.titleTr,
+        titleEn: season.titleEn,
+        synopsisTr: season.synopsisTr,
+        synopsisEn: season.synopsisEn,
+        episodes: season.episodes.map((e) => this.toAdminEpisode(e)),
+      })),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  /** Prisma bölüm + medya satırını yönetim özetine çevirir (sır yok). */
+  private toAdminEpisode(e: {
+    id: string;
+    seasonNumber: number;
+    episodeNumber: number;
+    titleTr: string;
+    titleEn: string;
+    synopsisTr: string | null;
+    synopsisEn: string | null;
+    durationSeconds: number;
+    accessType: 'FREE' | 'SUBSCRIPTION' | 'CREDIT';
+    creditCost: number | null;
+    status: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED';
+    publishedAt: Date | null;
+    freeUntilAt: Date | null;
+    verticalPreviewUrl: string | null;
+    updatedAt: Date;
+    media: Array<{
+      id: string;
+      provider: string;
+      state: string;
+      originalName: string | null;
+      sizeBytes: number | null;
+      durationSeconds: number | null;
+      errorMessage: string | null;
+      uploadExpiresAt: Date | null;
+      readyAt: Date | null;
+      createdAt: Date;
+    }>;
+  }) {
+    return {
+      id: e.id,
+      seasonNumber: e.seasonNumber,
+      episodeNumber: e.episodeNumber,
+      titleTr: e.titleTr,
+      titleEn: e.titleEn,
+      synopsisTr: e.synopsisTr,
+      synopsisEn: e.synopsisEn,
+      durationSeconds: e.durationSeconds,
+      accessType: e.accessType,
+      creditCost: e.creditCost,
+      status: e.status,
+      publishedAt: e.publishedAt ? e.publishedAt.toISOString() : null,
+      freeUntilAt: e.freeUntilAt ? e.freeUntilAt.toISOString() : null,
+      verticalPreviewUrl: e.verticalPreviewUrl,
+      updatedAt: e.updatedAt.toISOString(),
+      media: e.media.map((m) => ({
+        id: m.id,
+        provider: m.provider,
+        state: m.state,
+        originalName: m.originalName,
+        sizeBytes: m.sizeBytes,
+        durationSeconds: m.durationSeconds,
+        errorMessage: m.errorMessage,
+        uploadExpiresAt: m.uploadExpiresAt ? m.uploadExpiresAt.toISOString() : null,
+        readyAt: m.readyAt ? m.readyAt.toISOString() : null,
+        createdAt: m.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  // ------------------------- Sezon ve bölüm ----------------------------------
+
+  async createSeason(
+    contentId: string,
+    dto: { seasonNumber: number; titleTr?: string; titleEn?: string; synopsisTr?: string; synopsisEn?: string },
+    actorUserId: string,
+  ) {
+    const content = await this.prisma.content.findUnique({
+      where: { id: contentId },
+      select: { id: true, kind: true },
+    });
+    if (!content) {
+      throw DomainError.notFound('CONTENT_NOT_FOUND', 'errors.contentNotFound', { contentId });
+    }
+    const exists = await this.prisma.season.findUnique({
+      where: { contentId_seasonNumber: { contentId, seasonNumber: dto.seasonNumber } },
+      select: { id: true },
+    });
+    if (exists) {
+      throw DomainError.conflict('SEASON_CONFLICT', 'errors.slugConflict', {
+        contentId,
+        seasonNumber: dto.seasonNumber,
+      });
+    }
+    const row = await this.prisma.season.create({
+      data: {
+        contentId,
+        seasonNumber: dto.seasonNumber,
+        titleTr: dto.titleTr,
+        titleEn: dto.titleEn,
+        synopsisTr: dto.synopsisTr,
+        synopsisEn: dto.synopsisEn,
+      },
+    });
+    await this.audit.log({
+      actorUserId,
+      action: 'SEASON_CREATE',
+      entityType: 'season',
+      entityId: row.id,
+      after: { contentId, seasonNumber: row.seasonNumber },
+    });
+    return { ok: true as const, id: row.id };
+  }
+
+  async updateSeason(
+    seasonId: string,
+    dto: { titleTr?: string; titleEn?: string; synopsisTr?: string; synopsisEn?: string },
+    actorUserId: string,
+  ) {
+    const before = await this.prisma.season.findUnique({
+      where: { id: seasonId },
+      select: { id: true, titleTr: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('SEASON_NOT_FOUND', 'errors.notFound', { seasonId });
+    }
+    await this.prisma.season.update({ where: { id: seasonId }, data: dto });
+    await this.audit.log({
+      actorUserId,
+      action: 'SEASON_UPDATE',
+      entityType: 'season',
+      entityId: seasonId,
+      before: { titleTr: before.titleTr },
+      after: dto,
+    });
+    return { ok: true as const, id: seasonId };
+  }
+
+  async createEpisode(
+    contentId: string,
+    dto: {
+      seasonNumber: number;
+      episodeNumber: number;
+      titleTr: string;
+      titleEn: string;
+      synopsisTr?: string;
+      synopsisEn?: string;
+      durationSeconds: number;
+      accessType: 'FREE' | 'SUBSCRIPTION' | 'CREDIT';
+      creditCost?: number;
+      verticalPreviewUrl?: string | null;
+      freeUntilAt?: string | null;
+    },
+    actorUserId: string,
+  ) {
+    const content = await this.prisma.content.findUnique({
+      where: { id: contentId },
+      select: { id: true, kind: true },
+    });
+    if (!content) {
+      throw DomainError.notFound('CONTENT_NOT_FOUND', 'errors.contentNotFound', { contentId });
+    }
+    // CREDIT kuralı sözleşmede de var; sunucu tarafında ikinci savunma.
+    if (dto.accessType === 'CREDIT' && (dto.creditCost ?? 0) <= 0) {
+      throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+        fields: [{ path: 'creditCost', message: 'CREDIT erişiminde creditCost zorunludur' }],
+      });
+    }
+    const season = await this.prisma.season.findUnique({
+      where: { contentId_seasonNumber: { contentId, seasonNumber: dto.seasonNumber } },
+      select: { id: true },
+    });
+    if (!season) {
+      throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+        fields: [{ path: 'seasonNumber', message: 'Sezon bulunamadı — önce sezon oluşturun' }],
+      });
+    }
+    try {
+      const row = await this.prisma.episode.create({
+        data: {
+          contentId,
+          seasonNumber: dto.seasonNumber,
+          episodeNumber: dto.episodeNumber,
+          titleTr: dto.titleTr,
+          titleEn: dto.titleEn,
+          synopsisTr: dto.synopsisTr,
+          synopsisEn: dto.synopsisEn,
+          durationSeconds: dto.durationSeconds,
+          accessType: dto.accessType,
+          creditCost: dto.accessType === 'CREDIT' ? dto.creditCost ?? null : null,
+          verticalPreviewUrl: dto.verticalPreviewUrl ?? null,
+          freeUntilAt: dto.freeUntilAt ? new Date(dto.freeUntilAt) : null,
+          status: 'DRAFT',
+        },
+      });
+      await this.audit.log({
+        actorUserId,
+        action: 'EPISODE_CREATE',
+        entityType: 'episode',
+        entityId: row.id,
+        after: {
+          contentId,
+          seasonNumber: row.seasonNumber,
+          episodeNumber: row.episodeNumber,
+          accessType: row.accessType,
+          creditCost: row.creditCost,
+        },
+      });
+      return { ok: true as const, id: row.id };
+    } catch (err) {
+      if (
+        typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'P2002'
+      ) {
+        throw DomainError.conflict('EPISODE_CONFLICT', 'errors.slugConflict', {
+          seasonNumber: dto.seasonNumber,
+          episodeNumber: dto.episodeNumber,
+        });
+      }
+      throw err;
+    }
+  }
+
+  async updateEpisode(
+    episodeId: string,
+    dto: {
+      seasonNumber?: number;
+      episodeNumber?: number;
+      titleTr?: string;
+      titleEn?: string;
+      synopsisTr?: string | null;
+      synopsisEn?: string | null;
+      durationSeconds?: number;
+      accessType?: 'FREE' | 'SUBSCRIPTION' | 'CREDIT';
+      creditCost?: number | null;
+      verticalPreviewUrl?: string | null;
+      freeUntilAt?: string | null;
+    },
+    actorUserId: string,
+  ) {
+    const before = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { id: true, contentId: true, seasonNumber: true, episodeNumber: true, titleTr: true, accessType: true, creditCost: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('EPISODE_NOT_FOUND', 'errors.notFound', { episodeId });
+    }
+    const accessType = dto.accessType ?? before.accessType;
+    let creditCost = dto.creditCost === undefined ? before.creditCost : dto.creditCost;
+    if (accessType === 'CREDIT' && (creditCost ?? 0) <= 0) {
+      throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+        fields: [{ path: 'creditCost', message: 'CREDIT erişiminde creditCost zorunludur' }],
+      });
+    }
+    if (accessType !== 'CREDIT') creditCost = null;
+
+    if (dto.seasonNumber !== undefined && dto.seasonNumber !== before.seasonNumber) {
+      const season = await this.prisma.season.findUnique({
+        where: { contentId_seasonNumber: { contentId: before.contentId, seasonNumber: dto.seasonNumber } },
+        select: { id: true },
+      });
+      if (!season) {
+        throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+          fields: [{ path: 'seasonNumber', message: 'Hedef sezon bulunamadı' }],
+        });
+      }
+    }
+
+    try {
+      await this.prisma.episode.update({
+        where: { id: episodeId },
+        data: {
+          seasonNumber: dto.seasonNumber,
+          episodeNumber: dto.episodeNumber,
+          titleTr: dto.titleTr,
+          titleEn: dto.titleEn,
+          synopsisTr: dto.synopsisTr,
+          synopsisEn: dto.synopsisEn,
+          durationSeconds: dto.durationSeconds,
+          accessType,
+          creditCost,
+          verticalPreviewUrl: dto.verticalPreviewUrl,
+          freeUntilAt:
+            dto.freeUntilAt === undefined ? undefined : dto.freeUntilAt ? new Date(dto.freeUntilAt) : null,
+        },
+      });
+    } catch (err) {
+      if (
+        typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'P2002'
+      ) {
+        throw DomainError.conflict('EPISODE_CONFLICT', 'errors.slugConflict', {
+          seasonNumber: dto.seasonNumber ?? before.seasonNumber,
+          episodeNumber: dto.episodeNumber ?? before.episodeNumber,
+        });
+      }
+      throw err;
+    }
+
+    await this.audit.log({
+      actorUserId,
+      action: 'EPISODE_UPDATE',
+      entityType: 'episode',
+      entityId: episodeId,
+      before: {
+        titleTr: before.titleTr,
+        accessType: before.accessType,
+        creditCost: before.creditCost,
+      },
+      after: { titleTr: dto.titleTr, accessType, creditCost },
+    });
+    return { ok: true as const, id: episodeId };
+  }
+
+  /** Bölüm durum geçiş matrisi (Faz 8): taslak/planlı/yayında/arşivde. */
+  private static readonly EPISODE_STATUS_TRANSITIONS: Record<string, readonly string[]> = {
+    DRAFT: ['PUBLISHED', 'ARCHIVED'],
+    SCHEDULED: ['PUBLISHED', 'DRAFT', 'ARCHIVED'],
+    PUBLISHED: ['ARCHIVED', 'DRAFT'],
+    ARCHIVED: ['PUBLISHED', 'DRAFT'],
+  };
+
+  async changeEpisodeStatus(episodeId: string, next: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED', actorUserId: string) {
+    const before = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { id: true, status: true, publishedAt: true, titleTr: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('EPISODE_NOT_FOUND', 'errors.notFound', { episodeId });
+    }
+    const allowed = AdminService.EPISODE_STATUS_TRANSITIONS[before.status] ?? [];
+    if (!allowed.includes(next)) {
+      throw DomainError.badRequest('VALIDATION_FAILED', 'errors.validationFailed', {
+        fields: [{ path: 'status', message: `Geçersiz bölüm durumu geçişi: ${before.status} → ${next}` }],
+      });
+    }
+    const updated = await this.prisma.episode.update({
+      where: { id: episodeId },
+      data: {
+        status: next,
+        publishedAt: next === 'PUBLISHED' && !before.publishedAt ? new Date() : before.publishedAt,
+      },
+    });
+    await this.audit.log({
+      actorUserId,
+      action: 'EPISODE_STATUS_CHANGE',
+      entityType: 'episode',
+      entityId: episodeId,
+      before: { status: before.status },
+      after: { status: next },
+    });
+    return {
+      id: updated.id,
+      status: updated.status,
+      publishedAt: updated.publishedAt ? updated.publishedAt.toISOString() : null,
+    };
+  }
+
+  /** Bölüm silimi: yalnızca izleme/açma kaydı olmayan bölümler silinir
+   * (finansal + izleme verisi RESTRICT ile korunur). Yayında bölüm 409. */
+  async deleteEpisode(episodeId: string, actorUserId: string) {
+    const row = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: {
+        id: true,
+        titleTr: true,
+        status: true,
+        _count: { select: { unlocks: true, watchHistory: true, playbackSessions: true } },
+      },
+    });
+    if (!row) {
+      throw DomainError.notFound('EPISODE_NOT_FOUND', 'errors.notFound', { episodeId });
+    }
+    if (row.status === 'PUBLISHED') {
+      throw DomainError.conflict('EPISODE_PUBLISHED', 'errors.validationFailed', {
+        message: 'Yayındaki bölüm silinemez — önce yayından kaldırın',
+      });
+    }
+    if (row._count.unlocks > 0 || row._count.watchHistory > 0 || row._count.playbackSessions > 0) {
+      throw DomainError.conflict('EPISODE_HAS_ACTIVITY', 'errors.validationFailed', {
+        message: 'İzleme/açma kaydı olan bölüm silinemez (finansal kayıt korunur)',
+        unlocks: row._count.unlocks,
+        watchHistory: row._count.watchHistory,
+      });
+    }
+    await this.prisma.episode.delete({ where: { id: episodeId } });
+    await this.audit.log({
+      actorUserId,
+      action: 'EPISODE_DELETE',
+      entityType: 'episode',
+      entityId: episodeId,
+      before: { titleTr: row.titleTr, status: row.status },
+    });
+    return { ok: true as const, id: episodeId };
+  }
+
+  // ------------------------- Gelir modeli ------------------------------------
+
+  async listPlans() {
+    const rows = await this.prisma.plan.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: { _count: { select: { subscriptions: { where: { status: { in: ['ACTIVE', 'TRIALING', 'GRACE_PERIOD'] } } } } } },
+    });
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        titleTr: row.titleTr,
+        titleEn: row.titleEn,
+        platformProductIdIos: row.platformProductIdIos,
+        platformProductIdAndroid: row.platformProductIdAndroid,
+        billingPeriod: row.billingPeriod,
+        priceKurus: row.priceKurus,
+        currency: row.currency,
+        trialDays: row.trialDays,
+        gracePeriodDays: row.gracePeriodDays,
+        isActive: row.isActive,
+        sortOrder: row.sortOrder,
+        activeSubscriberCount: row._count.subscriptions,
+      })),
+    };
+  }
+
+  async updatePlan(
+    planId: string,
+    dto: {
+      titleTr?: string;
+      titleEn?: string;
+      platformProductIdIos?: string | null;
+      platformProductIdAndroid?: string | null;
+      priceKurus?: number;
+      currency?: string;
+      trialDays?: number;
+      gracePeriodDays?: number;
+      isActive?: boolean;
+      sortOrder?: number;
+    },
+    actorUserId: string,
+  ) {
+    const before = await this.prisma.plan.findUnique({
+      where: { id: planId },
+      select: { id: true, code: true, priceKurus: true, isActive: true, platformProductIdIos: true, platformProductIdAndroid: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('PLAN_NOT_FOUND', 'errors.notFound', { planId });
+    }
+    const updated = await this.prisma.plan.update({ where: { id: planId }, data: dto });
+    await this.audit.log({
+      actorUserId,
+      action: 'PLAN_UPDATE',
+      entityType: 'plan',
+      entityId: planId,
+      before: {
+        code: before.code,
+        priceKurus: before.priceKurus,
+        isActive: before.isActive,
+        ios: before.platformProductIdIos,
+        android: before.platformProductIdAndroid,
+      },
+      after: {
+        code: updated.code,
+        priceKurus: updated.priceKurus,
+        isActive: updated.isActive,
+        ios: updated.platformProductIdIos,
+        android: updated.platformProductIdAndroid,
+      },
+    });
+    return { ok: true as const, id: planId };
+  }
+
+  async listCreditPacks() {
+    const rows = await this.prisma.creditPack.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { credits: 'asc' }],
+    });
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        credits: row.credits,
+        bonusCredits: row.bonusCredits,
+        platformProductIdIos: row.platformProductIdIos,
+        platformProductIdAndroid: row.platformProductIdAndroid,
+        priceKurus: row.priceKurus,
+        currency: row.currency,
+        isActive: row.isActive,
+        sortOrder: row.sortOrder,
+      })),
+    };
+  }
+
+  async updateCreditPack(
+    packId: string,
+    dto: {
+      platformProductIdIos?: string | null;
+      platformProductIdAndroid?: string | null;
+      priceKurus?: number;
+      currency?: string;
+      isActive?: boolean;
+      sortOrder?: number;
+      bonusCredits?: number;
+    },
+    actorUserId: string,
+  ) {
+    const before = await this.prisma.creditPack.findUnique({
+      where: { id: packId },
+      select: { id: true, code: true, priceKurus: true, isActive: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('CREDIT_PACK_NOT_FOUND', 'errors.notFound', { packId });
+    }
+    await this.prisma.creditPack.update({ where: { id: packId }, data: dto });
+    await this.audit.log({
+      actorUserId,
+      action: 'CREDIT_PACK_UPDATE',
+      entityType: 'credit_pack',
+      entityId: packId,
+      before: { code: before.code, priceKurus: before.priceKurus, isActive: before.isActive },
+      after: { code: before.code, priceKurus: dto.priceKurus, isActive: dto.isActive },
+    });
+    return { ok: true as const, id: packId };
+  }
+
+  /** Mağaza satın alma kayıtları (iade/durum takibiyle). */
+  async listStoreTransactions(params: {
+    page: number;
+    pageSize: number;
+    userId?: string;
+    state?: 'PENDING' | 'PURCHASED' | 'REFUNDED' | 'REVOKED';
+    productType?: 'SUBSCRIPTION' | 'CREDIT_PACK';
+  }) {
+    const where = {
+      ...(params.userId ? { userId: params.userId } : {}),
+      ...(params.state ? { purchaseState: params.state } : {}),
+      ...(params.productType ? { productType: params.productType } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.storeTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { email: true } } },
+        ...prismaSkipTake(params.page, params.pageSize),
+      }),
+      this.prisma.storeTransaction.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        userEmail: row.user?.email ?? null,
+        platform: row.platform,
+        productType: row.productType,
+        productId: row.productId,
+        storeTransactionId: row.storeTransactionId,
+        quantity: row.quantity,
+        priceKurus: row.priceKurus,
+        currency: row.currency,
+        purchaseState: row.purchaseState,
+        validatedAt: row.validatedAt ? row.validatedAt.toISOString() : null,
+        refundedAt: row.refundedAt ? row.refundedAt.toISOString() : null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      meta: buildPageMeta(params.page, params.pageSize, total),
+    };
+  }
+
+  /** Kredi ledger hareketleri (yönetim görünümü — append-only dökümü). */
+  async listLedger(params: {
+    page: number;
+    pageSize: number;
+    userId?: string;
+    type?: 'PURCHASE' | 'GRANT' | 'UNLOCK_SPEND' | 'REFUND' | 'ADJUSTMENT' | 'EXPIRY';
+  }) {
+    const where = {
+      ...(params.userId ? { userId: params.userId } : {}),
+      ...(params.type ? { type: params.type } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.creditLedger.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { email: true, displayName: true } } },
+        ...prismaSkipTake(params.page, params.pageSize),
+      }),
+      this.prisma.creditLedger.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        userEmail: row.user?.email ?? null,
+        displayName: row.user?.displayName ?? null,
+        type: row.type,
+        delta: row.delta,
+        purchasedDelta: row.purchasedDelta,
+        grantedDelta: row.grantedDelta,
+        balanceAfterPurchased: row.balanceAfterPurchased,
+        balanceAfterGranted: row.balanceAfterGranted,
+        referenceType: row.referenceType,
+        referenceId: row.referenceId,
+        note: row.note,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      meta: buildPageMeta(params.page, params.pageSize, total),
+    };
+  }
+
+  // ------------------------- Kullanıcı yönetimi ------------------------------
+
+  /** Kullanıcı yönetim detayı: profil + cüzdan + abonelik + son hareketler. */
+  async getUserDetail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        creditWallet: true,
+        subscriptions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { plan: { select: { code: true, titleTr: true, titleEn: true } } },
+        },
+      },
+    });
+    if (!user) {
+      throw DomainError.notFound('USER_NOT_FOUND', 'errors.notFound', { userId });
+    }
+
+    const [recentLedger, unlockCount, favoriteCount, purchaseAgg] = await Promise.all([
+      this.prisma.creditLedger.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+      }),
+      this.prisma.episodeUnlock.count({ where: { userId } }),
+      this.prisma.favorite.count({ where: { userId } }),
+      this.prisma.storeTransaction.aggregate({
+        where: { userId, purchaseState: 'PURCHASED' },
+        _count: { _all: true },
+        _sum: { priceKurus: true },
+      }),
+    ]);
+
+    const subscription = user.subscriptions[0];
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      status: user.status,
+      locale: user.locale,
+      emailVerified: user.emailVerifiedAt !== null,
+      createdAt: user.createdAt.toISOString(),
+      wallet: user.creditWallet
+        ? {
+            purchased: user.creditWallet.purchasedBalance,
+            granted: user.creditWallet.grantedBalance,
+            total: user.creditWallet.purchasedBalance + user.creditWallet.grantedBalance,
+          }
+        : null,
+      subscription: subscription
+        ? {
+            id: subscription.id,
+            planCode: subscription.plan.code,
+            planTitle: subscription.plan.titleTr,
+            platform: subscription.platform,
+            status: subscription.status,
+            autoRenew: subscription.autoRenew,
+            currentPeriodEnd: subscription.currentPeriodEnd
+              ? subscription.currentPeriodEnd.toISOString()
+              : null,
+            expiresAt: subscription.expiresAt ? subscription.expiresAt.toISOString() : null,
+            canceledAt: subscription.canceledAt ? subscription.canceledAt.toISOString() : null,
+          }
+        : null,
+      recentLedger: recentLedger.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        userEmail: user.email,
+        displayName: user.displayName,
+        type: row.type,
+        delta: row.delta,
+        purchasedDelta: row.purchasedDelta,
+        grantedDelta: row.grantedDelta,
+        balanceAfterPurchased: row.balanceAfterPurchased,
+        balanceAfterGranted: row.balanceAfterGranted,
+        referenceType: row.referenceType,
+        referenceId: row.referenceId,
+        note: row.note,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      stats: {
+        unlockCount,
+        favoriteCount,
+        purchaseCount: purchaseAgg._count._all,
+        totalSpentKurus: purchaseAgg._sum.priceKurus ?? 0,
+      },
+    };
+  }
+
+  /** Kullanıcı durum değişikliği (askıya al / geri al) — ADMIN, audit. */
+  async changeUserStatus(
+    userId: string,
+    status: 'ACTIVE' | 'SUSPENDED',
+    actorUserId: string,
+    ipHash?: string,
+  ) {
+    const before = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true, role: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('USER_NOT_FOUND', 'errors.notFound', { userId });
+    }
+    if (before.status === 'DELETED') {
+      throw DomainError.conflict('USER_DELETED', 'errors.validationFailed', {
+        message: 'Silinmiş hesabın durumu değiştirilemez',
+      });
+    }
+    if (before.id === actorUserId) {
+      throw DomainError.conflict('SELF_ACTION_FORBIDDEN', 'errors.validationFailed', {
+        message: 'Yönetici kendi hesabını askıya alamaz',
+      });
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { status } });
+    await this.audit.log({
+      actorUserId,
+      action: 'USER_STATUS_CHANGE',
+      entityType: 'user',
+      entityId: userId,
+      before: { status: before.status },
+      after: { status },
+      ipHash,
+    });
+    return { ok: true as const, id: userId };
+  }
+
+  /** Rol değişikliği (USER/EDITOR/ADMIN) — ADMIN, audit. */
+  async changeUserRole(
+    userId: string,
+    role: 'USER' | 'EDITOR' | 'ADMIN',
+    actorUserId: string,
+    ipHash?: string,
+  ) {
+    const before = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, status: true },
+    });
+    if (!before) {
+      throw DomainError.notFound('USER_NOT_FOUND', 'errors.notFound', { userId });
+    }
+    if (before.status === 'DELETED') {
+      throw DomainError.conflict('USER_DELETED', 'errors.validationFailed', {
+        message: 'Silinmiş hesabın rolü değiştirilemez',
+      });
+    }
+    if (before.id === actorUserId) {
+      throw DomainError.conflict('SELF_ACTION_FORBIDDEN', 'errors.validationFailed', {
+        message: 'Yönetici kendi rolünü değiştiremez',
+      });
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { role } });
+    await this.audit.log({
+      actorUserId,
+      action: 'USER_ROLE_CHANGE',
+      entityType: 'user',
+      entityId: userId,
+      before: { role: before.role },
+      after: { role },
+      ipHash,
+    });
+    return { ok: true as const, id: userId };
   }
 
   /** İçerik varlık denetimi (banner/section item bağlaması öncesi). */

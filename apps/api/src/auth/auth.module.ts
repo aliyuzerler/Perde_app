@@ -10,7 +10,8 @@ import { AuthController } from './auth.controller';
 import { JwtService } from './jwt.service';
 import { EmailTokenService } from './email-token.service';
 import { RateLimiterService } from './rate-limit.service';
-import { JwtAuthGuard, RolesGuard } from './guards';
+import { JwtAuthGuard, RolesGuard, StepUpGuard } from './guards';
+import { StepUpService } from './step-up.service';
 
 @Global()
 @Module({
@@ -39,8 +40,19 @@ import { JwtAuthGuard, RolesGuard } from './guards';
     RateLimiterService,
     JwtAuthGuard,
     RolesGuard,
+    StepUpGuard,
+    StepUpService,
   ],
   controllers: [AuthController],
-  exports: [JwtService, AuthService, EmailTokenService, RateLimiterService, JwtAuthGuard, RolesGuard],
+  exports: [
+    JwtService,
+    AuthService,
+    EmailTokenService,
+    RateLimiterService,
+    JwtAuthGuard,
+    RolesGuard,
+    StepUpGuard,
+    StepUpService,
+  ],
 })
 export class AuthModule {}

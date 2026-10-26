@@ -1,16 +1,39 @@
 /**
- * Admin uçları — rol korumalı (EDITOR/ADMIN; kredi düzeltmesi yalnız ADMIN).
+ * Yönetim uçları — rol korumalı (EDITOR/ADMIN; finansal/kritik işlemler
+ * ADMIN + adım-yukarı token'ı — FAZ 8).
  *
  * Kullanıcı/ödemeler:
- *   GET   /admin/audit-logs
+ *   GET   /admin/audit-logs                      (FAZ 8: action/actorId filtreleri)
  *   GET   /admin/users
+ *   GET   /admin/users/:userId                   (FAZ 8 detay)
  *   POST  /admin/users/:userId/credits/adjust   (ADMIN; note zorunlu)
+ *   PATCH /admin/users/:userId/status            (ADMIN + step-up — FAZ 8)
+ *   PATCH /admin/users/:userId/role              (ADMIN + step-up — FAZ 8)
  *
- * İçerik yaşam döngüsü (Faz 2c):
+ * İçerik yaşam döngüsü (Faz 2c + FAZ 8 düzenleme):
  *   POST  /admin/titles                        (DRAFT oluşturur)
  *   POST  /admin/titles/:id/publish            (PUBLISHED'e alır)
  *   GET   /admin/titles                        (TÜM durumlar; status/kind/search + sayfalama)
+ *   GET   /admin/titles/:id                    (detay: sezonlar+bölümler+medya — FAZ 8)
  *   PATCH /admin/titles/:id/status             (TASLAK→İŞLENİYOR→YAYINDA→ARŞİVDE matrisi)
+ *   PATCH /admin/titles/:id                    (afiş/başlık/açıklama/kategori — FAZ 8)
+ *
+ * Sezon/bölüm (FAZ 8):
+ *   POST  /admin/titles/:id/seasons · PATCH /admin/seasons/:id
+ *   POST  /admin/titles/:id/episodes · PATCH/DELETE /admin/episodes/:id
+ *   PATCH /admin/episodes/:id/status (yayınla / yayından kaldır)
+ *
+ * Gelir modeli (FAZ 8; güncellemeler ADMIN + step-up):
+ *   GET   /admin/plans · PATCH /admin/plans/:id
+ *   GET   /admin/credit-packs · PATCH /admin/credit-packs/:id
+ *   GET   /admin/store-transactions · GET /admin/credit-ledger
+ *
+ * Bildirim kampanyaları (FAZ 8; gönderim ADMIN + step-up):
+ *   GET   /admin/notification-campaigns · POST /admin/notification-campaigns
+ *   POST  /admin/notification-campaigns/:id/cancel
+ *
+ * Dashboard (FAZ 8):
+ *   GET   /admin/dashboard?from&to
  *
  * Ana sayfa düzeni yönetimi (Faz 2c):
  *   GET   /admin/banners · POST /admin/banners · PATCH/DELETE /admin/banners/:id
@@ -26,8 +49,22 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  adminCampaignInputSchema,
+  adminCreditLedgerListParamsSchema,
+  adminCreditPackUpdateSchema,
+  adminDashboardParamsSchema,
+  adminEpisodeInputSchema,
+  adminEpisodeStatusChangeSchema,
+  adminEpisodeUpdateSchema,
+  adminPlanUpdateSchema,
+  adminSeasonInputSchema,
+  adminSeasonUpdateSchema,
   adminStatusChangeSchema,
+  adminStoreTransactionListParamsSchema,
   adminTitleListParamsSchema,
+  adminTitleUpdateSchema,
+  adminUserStatusUpdateSchema,
+  adminUserRoleUpdateSchema,
   bannerInputSchema,
   bannerUpdateSchema,
   homeSectionInputSchema,
@@ -37,7 +74,8 @@ import {
 } from '@perdego/contracts';
 import { parseQuery, ZodValidationPipe } from '../common/zod-validation.pipe';
 import { CurrentUser, CurrentLang, type Lang, type RequestUser } from '../common/request-context';
-import { Roles } from '../auth/guards';
+import { Roles, StepUp } from '../auth/guards';
+import { CampaignsService } from '../notifications/campaigns.service';
 import { AdminService } from './admin.service';
 
 const adjustCreditsSchema = z.object({
@@ -45,6 +83,9 @@ const adjustCreditsSchema = z.object({
   grantedDelta: z.number().int().optional().default(0),
   note: z.string().trim().min(3, 'Düzeltme gerekçesi zorunludur').max(500),
 });
+
+const hashIp = (ip: string | undefined): string | undefined =>
+  ip ? createHash('sha256').update(ip).digest('hex').slice(0, 32) : undefined;
 
 const createContentSchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug kebab-case olmalı'),
@@ -64,16 +105,21 @@ const createContentSchema = z.object({
 @Roles('EDITOR', 'ADMIN')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly campaigns: CampaignsService,
+  ) {}
 
   @Get('audit-logs')
-  @ApiOperation({ summary: 'Denetim günlüğü (sayfalı)' })
+  @ApiOperation({ summary: 'Denetim günlüğü (sayfalı; FAZ 8: action/actorId filtreleri)' })
   async auditLogs(@Query() query: unknown) {
     const { page, pageSize } = parseQuery(pageRequestSchema, query);
-    const entityType = typeof query === 'object' && query !== null && 'entityType' in query
-      ? String((query as Record<string, unknown>).entityType)
-      : undefined;
-    return this.admin.listAuditLogs(page, pageSize, entityType ? { entityType } : undefined);
+    const q = query as Record<string, unknown>;
+    const entityType = typeof q?.entityType === 'string' ? q.entityType : undefined;
+    const entityId = typeof q?.entityId === 'string' ? q.entityId : undefined;
+    const action = typeof q?.action === 'string' && q.action.length > 0 ? q.action : undefined;
+    const actorUserId = typeof q?.actorId === 'string' && q.actorId.length > 0 ? q.actorId : undefined;
+    return this.admin.listAuditLogs(page, pageSize, { entityType, entityId, action, actorUserId });
   }
 
   @Get('users')
@@ -223,5 +269,220 @@ export class AdminController {
     @Param('itemId') itemId: string,
   ) {
     return this.admin.removeHomeSectionItem(id, itemId, actor.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Dashboard
+  // ---------------------------------------------------------------------------
+
+  @Get('dashboard')
+  @ApiOperation({ summary: 'Panel özeti (kullanıcı/abonelik/katalog/satın alma/kredi + tarih aralığı)' })
+  async dashboard(@Query() query: unknown) {
+    const params = parseQuery(adminDashboardParamsSchema, query);
+    const to = params.to ? new Date(params.to) : new Date();
+    const from = params.from
+      ? new Date(params.from)
+      : new Date(to.getTime() - 30 * 86_400_000);
+    return this.admin.getDashboard({ from, to });
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Yapım düzenleme + yönetim detayı
+  // ---------------------------------------------------------------------------
+
+  @Get('titles/:id')
+  @ApiOperation({ summary: 'Yapım yönetim detayı (sezonlar + bölümler + medya durumu)' })
+  async titleDetail(@Param('id') id: string) {
+    return this.admin.getTitleDetail(id);
+  }
+
+  @Patch('titles/:id')
+  @ApiOperation({ summary: 'Yapım düzenle: başlık, açıklama, afiş, kategori, erişim modeli (audit loglu)' })
+  async updateTitle(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(adminTitleUpdateSchema)) dto: z.infer<typeof adminTitleUpdateSchema>,
+  ) {
+    return this.admin.updateTitle(id, dto, actor.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Sezon ve bölüm yönetimi
+  // ---------------------------------------------------------------------------
+
+  @Post('titles/:id/seasons')
+  @ApiOperation({ summary: 'Sezon oluştur (audit loglu)' })
+  async createSeason(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(adminSeasonInputSchema)) dto: z.infer<typeof adminSeasonInputSchema>,
+  ) {
+    return this.admin.createSeason(id, dto, actor.id);
+  }
+
+  @Patch('seasons/:seasonId')
+  @ApiOperation({ summary: 'Sezon düzenle (audit loglu)' })
+  async updateSeason(
+    @CurrentUser() actor: RequestUser,
+    @Param('seasonId') seasonId: string,
+    @Body(new ZodValidationPipe(adminSeasonUpdateSchema)) dto: z.infer<typeof adminSeasonUpdateSchema>,
+  ) {
+    return this.admin.updateSeason(seasonId, dto, actor.id);
+  }
+
+  @Post('titles/:id/episodes')
+  @ApiOperation({ summary: 'Bölüm oluştur: numara, süre, erişim modeli, kredi fiyatı (DRAFT başlar)' })
+  async createEpisode(
+    @CurrentUser() actor: RequestUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(adminEpisodeInputSchema)) dto: z.infer<typeof adminEpisodeInputSchema>,
+  ) {
+    return this.admin.createEpisode(id, dto, actor.id);
+  }
+
+  @Patch('episodes/:episodeId')
+  @ApiOperation({ summary: 'Bölüm düzenle: metaveri + erişim modeli + kredi fiyatı (audit loglu)' })
+  async updateEpisode(
+    @CurrentUser() actor: RequestUser,
+    @Param('episodeId') episodeId: string,
+    @Body(new ZodValidationPipe(adminEpisodeUpdateSchema)) dto: z.infer<typeof adminEpisodeUpdateSchema>,
+  ) {
+    return this.admin.updateEpisode(episodeId, dto, actor.id);
+  }
+
+  @Patch('episodes/:episodeId/status')
+  @ApiOperation({ summary: 'Bölüm yayınla / yayından kaldır / arşivle (geçiş matrisi denetimli)' })
+  async changeEpisodeStatus(
+    @CurrentUser() actor: RequestUser,
+    @Param('episodeId') episodeId: string,
+    @Body(new ZodValidationPipe(adminEpisodeStatusChangeSchema)) dto: z.infer<typeof adminEpisodeStatusChangeSchema>,
+  ) {
+    return this.admin.changeEpisodeStatus(episodeId, dto.status, actor.id);
+  }
+
+  @Delete('episodes/:episodeId')
+  @ApiOperation({ summary: 'Bölüm sil (yalnızca izleme/açma kaydı olmayan taslak/arşiv bölümü)' })
+  async deleteEpisode(@CurrentUser() actor: RequestUser, @Param('episodeId') episodeId: string) {
+    return this.admin.deleteEpisode(episodeId, actor.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Gelir modeli (finansal görünümler EDITOR/ADMIN; güncellemeler
+  // ADMIN + adım-yukarı)
+  // ---------------------------------------------------------------------------
+
+  @Get('plans')
+  @ApiOperation({ summary: 'Abonelik planları (platform ürün kimlikleriyle)' })
+  async listPlans() {
+    return this.admin.listPlans();
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Patch('plans/:planId')
+  @ApiOperation({ summary: 'Plan güncelle: fiyat, ürün kimliği, aktiflik (ADMIN + step-up, audit loglu)' })
+  async updatePlan(
+    @CurrentUser() actor: RequestUser,
+    @Param('planId') planId: string,
+    @Body(new ZodValidationPipe(adminPlanUpdateSchema)) dto: z.infer<typeof adminPlanUpdateSchema>,
+  ) {
+    return this.admin.updatePlan(planId, dto, actor.id);
+  }
+
+  @Get('credit-packs')
+  @ApiOperation({ summary: 'Kredi paketleri (platform ürün kimlikleriyle)' })
+  async listCreditPacks() {
+    return this.admin.listCreditPacks();
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Patch('credit-packs/:packId')
+  @ApiOperation({ summary: 'Kredi paketi güncelle (ADMIN + step-up, audit loglu)' })
+  async updateCreditPack(
+    @CurrentUser() actor: RequestUser,
+    @Param('packId') packId: string,
+    @Body(new ZodValidationPipe(adminCreditPackUpdateSchema)) dto: z.infer<typeof adminCreditPackUpdateSchema>,
+  ) {
+    return this.admin.updateCreditPack(packId, dto, actor.id);
+  }
+
+  @Get('store-transactions')
+  @ApiOperation({ summary: 'Satın alma kayıtları (iade/durum filtreli, sayfalı)' })
+  async listStoreTransactions(@Query() query: unknown) {
+    const params = parseQuery(adminStoreTransactionListParamsSchema, query);
+    return this.admin.listStoreTransactions(params);
+  }
+
+  @Get('credit-ledger')
+  @ApiOperation({ summary: 'Kredi ledger hareketleri (tip/kullanıcı filtreli, sayfalı)' })
+  async listLedger(@Query() query: unknown) {
+    const params = parseQuery(adminCreditLedgerListParamsSchema, query);
+    return this.admin.listLedger(params);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Kullanıcı yönetimi
+  // ---------------------------------------------------------------------------
+
+  @Get('users/:userId')
+  @ApiOperation({ summary: 'Kullanıcı detayı: profil + cüzdan + abonelik + son hareketler' })
+  async userDetail(@Param('userId') userId: string) {
+    return this.admin.getUserDetail(userId);
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Patch('users/:userId/status')
+  @ApiOperation({ summary: 'Kullanıcı askıya al / geri al (ADMIN + step-up, audit loglu)' })
+  async changeUserStatus(
+    @CurrentUser() actor: RequestUser,
+    @Req() req: Request,
+    @Param('userId') userId: string,
+    @Body(new ZodValidationPipe(adminUserStatusUpdateSchema)) dto: z.infer<typeof adminUserStatusUpdateSchema>,
+  ) {
+    return this.admin.changeUserStatus(userId, dto.status, actor.id, hashIp(req.ip));
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Patch('users/:userId/role')
+  @ApiOperation({ summary: 'Kullanıcı rolü değiştir (ADMIN + step-up, audit loglu)' })
+  async changeUserRole(
+    @CurrentUser() actor: RequestUser,
+    @Req() req: Request,
+    @Param('userId') userId: string,
+    @Body(new ZodValidationPipe(adminUserRoleUpdateSchema)) dto: z.infer<typeof adminUserRoleUpdateSchema>,
+  ) {
+    return this.admin.changeUserRole(userId, dto.role, actor.id, hashIp(req.ip));
+  }
+
+  // ---------------------------------------------------------------------------
+  // FAZ 8 — Bildirim kampanyaları
+  // ---------------------------------------------------------------------------
+
+  @Get('notification-campaigns')
+  @ApiOperation({ summary: 'Kampanya listesi (durum + sonuç sayaçlarıyla)' })
+  async listCampaigns() {
+    return this.campaigns.list();
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Post('notification-campaigns')
+  @ApiOperation({ summary: 'Duyuru oluştur: derhal gönder veya planla (ADMIN + step-up)' })
+  async createCampaign(
+    @CurrentUser() actor: RequestUser,
+    @Body(new ZodValidationPipe(adminCampaignInputSchema)) dto: z.infer<typeof adminCampaignInputSchema>,
+  ) {
+    return this.campaigns.create(dto, actor.id);
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Post('notification-campaigns/:id/cancel')
+  @ApiOperation({ summary: 'Planlanmış kampanyayı iptal et (ADMIN + step-up)' })
+  async cancelCampaign(@CurrentUser() actor: RequestUser, @Param('id') id: string) {
+    return this.campaigns.cancel(id, actor.id);
   }
 }

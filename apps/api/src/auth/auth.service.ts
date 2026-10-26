@@ -241,6 +241,27 @@ export class AuthService {
   }
 
   /**
+   * Parola doğrulama (FAZ 8 step-up akışı için).
+   * Kullanıcı yoksa/silinmişse 401; askıdaysa 403; parola hatalıysa 401.
+   * Login ile aynı hata sözleşmesi (kullanıcı sayımı koruması korunur).
+   */
+  async verifyPassword(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status === 'DELETED' || user.deletedAt) {
+      throw DomainError.unauthorized('BAD_CREDENTIALS', 'errors.badCredentials');
+    }
+    if (user.status === 'SUSPENDED') {
+      throw DomainError.forbidden('ACCOUNT_SUSPENDED', 'errors.accountSuspended');
+    }
+    const ok = user.passwordHash
+      ? await verify(user.passwordHash, password).catch(() => false)
+      : false;
+    if (!ok) {
+      throw DomainError.unauthorized('BAD_CREDENTIALS', 'errors.badCredentials');
+    }
+  }
+
+  /**
    * Parola değiştirme (oturum açıkken). Mevcut parola doğrulanır; DİĞER tüm
    * oturumlar iptal edilir (mevcut cihazda oturum korunur).
    */

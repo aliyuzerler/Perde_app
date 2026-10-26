@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
+/*
+ * PerdeGo Admin — koyu sinematik tasarım sistemi (FAZ 8).
+ * Mobil uygulamanın renk kimliği panele taşındı:
+ *   zemin #0D0D0F · yüzey #19191D · vurgu #B71C36 · metin #F5F1EA
+ * Veri tabloları okunabilirlik önceliğiyle yüksek kontrastlı tutulur;
+ * köşe yarıçapı 0–6 px (sinematik dikdörtgen dil).
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --pg-bg: #0d0d0f;
+  --pg-surface: #19191d;
+  --pg-surface-2: #202026;
+  --pg-border: #2c2c33;
+  --pg-border-strong: #3a3a42;
+  --pg-text: #f5f1ea;
+  --pg-text-dim: #a8a29a;
+  --pg-text-faint: #6f6a64;
+  --pg-accent: #b71c36;
+  --pg-accent-hover: #d32f4a;
+  --pg-accent-soft: rgba(183, 28, 54, 0.14);
+  --pg-green: #3d9970;
+  --pg-green-soft: rgba(61, 153, 112, 0.15);
+  --pg-amber: #d9a441;
+  --pg-amber-soft: rgba(217, 164, 65, 0.15);
+  --pg-red: #e05252;
+  --pg-red-soft: rgba(224, 82, 82, 0.15);
+  --pg-blue: #5b8bd0;
+  --pg-blue-soft: rgba(91, 139, 208, 0.15);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--pg-bg);
+  --color-foreground: var(--pg-text);
+  --color-surface: var(--pg-surface);
+  --color-surface2: var(--pg-surface-2);
+  --color-edge: var(--pg-border);
+  --color-edge-strong: var(--pg-border-strong);
+  --color-dim: var(--pg-text-dim);
+  --color-faint: var(--pg-text-faint);
+  --color-accent: var(--pg-accent);
+  --color-accent-hover: var(--pg-accent-hover);
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font-family: var(--font-sans);
+}
+
+* {
+  border-color: var(--pg-border);
+}
+
+/* İnce kaydırma çubuğu (koyu tema uyumlu) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--pg-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pg-border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a55;
+}
+
+/* Odak halkası — klavye erişilebilirliği */
+:focus-visible {
+  outline: 2px solid var(--pg-accent-hover);
+  outline-offset: 2px;
+}
+
+/* Sayı sütunları için seküler tablo hizalaması */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Satır geçişleri */
+.row-hover {
+  transition: background-color 120ms ease;
+}
+.row-hover:hover {
+  background: var(--pg-surface-2);
+}
+
+@keyframes pg-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
+.fade-up {
+  animation: pg-fade-up 200ms ease both;
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes pg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: pg-spin 800ms linear infinite;
 }

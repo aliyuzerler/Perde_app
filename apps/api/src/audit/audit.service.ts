@@ -36,10 +36,22 @@ export class AuditService {
     });
   }
 
-  async list(page: number, pageSize: number, filters?: { entityType?: string; entityId?: string }) {
+  async list(
+    page: number,
+    pageSize: number,
+    filters?: {
+      entityType?: string;
+      entityId?: string;
+      /** FAZ 8: panel filtreleri — eylem, aktör, arama. */
+      action?: string;
+      actorUserId?: string;
+    },
+  ) {
     const where = {
       ...(filters?.entityType ? { entityType: filters.entityType } : {}),
       ...(filters?.entityId ? { entityId: filters.entityId } : {}),
+      ...(filters?.action ? { action: { contains: filters.action, mode: 'insensitive' as const } } : {}),
+      ...(filters?.actorUserId ? { actorUserId: filters.actorUserId } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.auditLog.findMany({

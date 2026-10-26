@@ -231,6 +231,7 @@ model User {
   notifications          Notification[]
   notificationPreference NotificationPreference?
   auditLogs              AuditLog[]
+  sentCampaigns          NotificationCampaign[]
   createdContents        Content[]
 
   @@index([status])
@@ -902,4 +903,42 @@ model AuditLog {
   @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([actorUserId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// FAZ 8 — Yönetim paneli: bildirim kampanyaları (duyuru/planlanmış gönderim)
+// ---------------------------------------------------------------------------
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  /// Dispatch sürüyor (kullanıcı görünmez ara durum).
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model NotificationCampaign {
+  id             String           @id @default(cuid())
+  type           NotificationType
+  titleTr        String
+  titleEn        String
+  bodyTr         String
+  bodyEn         String
+  /// Deep-link verisi (Notification.dataJson'a kopyalanır).
+  dataJson       Json?
+  status         CampaignStatus   @default(DRAFT)
+  /// Gelecek zamanda ise planlanır; dispatch zamanı gelince gönderilir.
+  scheduledFor   DateTime?
+  sentAt         DateTime?
+  recipientCount Int              @default(0)
+  failedCount    Int              @default(0)
+  createdById    String?
+  createdBy      User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status, scheduledFor])
+  @@map("notification_campaigns")
 }

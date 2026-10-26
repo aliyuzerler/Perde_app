@@ -11,7 +11,7 @@ faz planı için `docs/ROADMAP.md` ve `docs/RELEASE_PLAN.md`.
 |-----|----------|-------|
 | `apps/mobile` | React Native + Expo (SDK 58) + Expo Router mobil uygulama | ✅ Çalışır (mock veri ile) |
 | `apps/api` | NestJS REST API + Prisma + PostgreSQL (tam alan modeli, 13 modül, Swagger) | ✅ Çalışır |
-| `apps/admin` | Next.js 16 + Tailwind 4 yönetim paneli (sağlık ekranı) | ✅ Çalışır |
+| `apps/admin` | Next.js 16 + Tailwind 4 yönetim paneli — gerçek API bağlantılı (FAZ 8) | ✅ Çalışır |
 | `packages/contracts` | Paylaşılan Zod şemaları + TypeScript tipleri | ✅ |
 | `docs/` | Mimari, tasarım, QA ve faz raporları | ✅ |
 | `docker-compose.yml` | Yerel PostgreSQL 16 + Redis 7 | ✅ |
@@ -46,7 +46,7 @@ pnpm db:seed        # özgün kurgu içerik (idempotent)
 
 # 5) Uygulamalar — her biri ayrı terminalde, bağımsız başlatılır
 pnpm dev:api        # http://localhost:3000  (Swagger: /api/docs, health: /health, /health/db)
-pnpm dev:admin      # http://localhost:3001  (API sağlık kartları)
+pnpm dev:admin      # http://localhost:3000  (yönetim paneli; API 3002'de ayrıca başlar)
 pnpm dev:mobile     # Expo dev server — Expo Go ile QR okutun
 ```
 
@@ -77,7 +77,7 @@ pnpm dev:mobile     # Expo dev server — Expo Go ile QR okutun
 5. Uygulamalar (ayrı PowerShell pencereleri):
    ```powershell
    pnpm dev:api       # http://localhost:3000
-   pnpm dev:admin     # http://localhost:3001
+   pnpm dev:admin     # http://localhost:3000  (admin@perdego.dev / Admin12345 demo hesabı: apps/api/prisma/seed.ts)
    pnpm dev:mobile    # Expo; Android emülatörde otomatik açmak için: pnpm --filter @perdego/mobile run android
    ```
 6. Mobil cihazdan Expo Go ile bağlanırken, aynı Wi-Fi ağında olun; cihaz

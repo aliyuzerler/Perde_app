@@ -118,6 +118,13 @@ temel metrikler.
 **Kabul Kriterleri**: tüm yazma işlemleri role göre kısıtlıdır; panel mobil API ile
 aynı sözleşmeleri paylaşır.
 
+**Durum**: ✅ **gerçeklendi** (kullanıcı faz takibinde FAZ 8 — bkz. `docs/phases/FAZ-8.md`).
+Panel gerçek API'ye bağlandı: dashboard, yapım/sezon/bölüm CRUD, güvenli video yükleme +
+yayın öncesi önizleme, gelir modeli (plan/paket/işlem/ledger), kullanıcı yönetimi,
+bildirim kampanyaları ve audit log. Kritik uçlar ADMIN + step-up (parola yeniden
+doğrulama) korumalı; tüm eylemler audit logda. Kanıt: 328 test yeşil (88 contracts +
+240 API) + tarayıcı E2E koşumu.
+
 ## Faz 7 — Bildirimler ve Yayın Hazırlığı
 
 **Kapsam**: Expo Notifications (yeni bölüm/izleme hatırlatıcısı), backend bildirim

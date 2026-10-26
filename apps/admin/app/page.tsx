@@ -1,214 +1,268 @@
 "use client";
 
 /**
- * PerdeGo Admin — Faz 2a başlangıç ekranı.
+ * PerdeGo Admin — Panel Özeti (modül 1, FAZ 8).
  *
- * Amaç: admin panelinin çalıştığını ve API altyapısına eriştiğini tek
- * bakışta göstermek. Sağlık göstergesi DÜRÜSTTÜR: API/DB erişilemezse
- * hata durumu gösterilir; asla başarılı taklidi yapılmaz (görev madde 10).
- *
- * Tasarım: docs/DESIGN.md — koyu sinematik tema, dikdörtgen kartlar,
- * 0–4 px köşe yarıçapı.
+ * GET /admin/dashboard?from&to: kullanıcı, abonelik, katalog, satın alma ve
+ * kredi özetleri + günlük seri (kayıt/gelir/açma) + son denetim kayıtları.
+ * Tarih aralığı seçimi temel raporları yeniden hesaplar.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ApiError, api, formatDate, formatDateTime, formatKurus } from "@/lib/api";
+import { AppShell } from "@/components/shell";
+import {
+  Card,
+  EmptyState,
+  Loading,
+  Select,
+  StatCard,
+  Table,
+  Td,
+  Th,
+} from "@/components/ui";
 
-const DEFAULT_API_BASE = "http://localhost:3000";
-
-type HealthState = "loading" | "up" | "down" | "error";
-
-interface DbCheck {
-  status: "up" | "down";
-  latencyMs?: number;
-  error?: string;
+interface Dashboard {
+  range: { from: string; to: string };
+  users: { total: number; active: number; suspended: number; newInRange: number };
+  subscriptions: { active: number; trialing: number; canceled: number; expired: number; gracePeriod: number };
+  catalog: {
+    publishedTitles: number;
+    draftTitles: number;
+    processingTitles: number;
+    archivedTitles: number;
+    totalEpisodes: number;
+    publishedEpisodes: number;
+  };
+  purchases: {
+    inRangeCount: number;
+    inRangeRevenueKurus: number;
+    totalCount: number;
+    totalRevenueKurus: number;
+    refundCount: number;
+    refundedAmountKurus: number;
+    subscriptionCount: number;
+    creditPackCount: number;
+  };
+  credits: {
+    grantedInRange: number;
+    purchasedInRange: number;
+    spentInRange: number;
+    refundAdjustInRange: number;
+    balancePurchased: number;
+    balanceGranted: number;
+  };
+  series: Array<{ day: string; signups: number; revenueKurus: number; unlocks: number }>;
+  recentAudit: Array<{ id: string; action: string; entityType: string; entityId: string; createdAt: string }>;
 }
 
-export default function AdminHomePage() {
-  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const apiBase = envBase && envBase.length > 0 ? envBase : DEFAULT_API_BASE;
+const RANGES = [
+  { key: "7", label: "Son 7 gün" },
+  { key: "30", label: "Son 30 gün" },
+  { key: "90", label: "Son 90 gün" },
+] as const;
 
-  const [apiState, setApiState] = useState<HealthState>("loading");
-  const [dbCheck, setDbCheck] = useState<DbCheck | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+export default function DashboardPage() {
+  const [data, setData] = useState<Dashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState<string>("30");
 
-  /**
-   * Sağlık kontrolü — yalnızca await sonrasında setState yapar (senkron
-   * setState yok). Mount efektinde ve buton tıklamasında kullanılır.
-   */
-  const check = useCallback(async () => {
-    setApiError(null);
-    setDbCheck(null);
-
+  const load = useCallback(async (days: string) => {
     try {
-      // 1) Süreç canlılığı (liveness)
-      const liveRes = await fetch(`${apiBase}/health`, { cache: "no-store" });
-      if (!liveRes.ok) {
-        throw new Error(`/health ${liveRes.status} döndü`);
-      }
-      await liveRes.json();
 
-      // 2) Veritabanı hazırlığı (readiness) — 503 de "yanıt" sayılır:
-      //    API ayakta ama DB down ise down DURUMU gösterilir.
-      const dbRes = await fetch(`${apiBase}/health/db`, { cache: "no-store" });
-      const dbJson = (await dbRes.json()) as {
-        checks?: { database?: DbCheck };
-      };
-      setDbCheck(dbJson.checks?.database ?? { status: "down" });
-
-      setApiState("up");
-      setCheckedAt(new Date().toLocaleTimeString("tr-TR"));
-    } catch (error) {
-      setApiState("error");
-      setApiError(
-        error instanceof Error ? error.message : "Bilinmeyen bağlantı hatası",
+      const to = new Date();
+      const from = new Date(Date.now() - Number(days) * 86_400_000);
+      const data = await api.get<Dashboard>(
+        `/admin/dashboard?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
       );
+      setData(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Panel verisi alınamadı.");
     }
-  }, [apiBase]);
+  }, []);
 
-  // İlk yüklemede otomatik kontrol (iptal güvenli; senkron setState yok)
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const onError = () => {
-        if (!cancelled) {
-          setApiState("error");
-        }
-      };
-      window.addEventListener("pagehide", onError);
-      try {
-        await check();
-      } finally {
-        window.removeEventListener("pagehide", onError);
-      }
+      await load(range);
+      void cancelled;
     })();
     return () => {
       cancelled = true;
     };
-  }, [check]);
+  }, [load, range]);
 
-  const apiLabel: Record<HealthState, string> = {
-    loading: "Kontrol ediliyor…",
-    up: "API çalışıyor",
-    down: "API hazır değil",
-    error: "API'ye erişilemedi",
-  };
-
-  const apiColor =
-    apiState === "up"
-      ? "text-[#2E7D32]"
-      : apiState === "error" || apiState === "down"
-        ? "text-[#B71C36]"
-        : "text-[#F5F1EA]/64";
+  const maxRevenue = Math.max(1, ...(data?.series.map((s) => s.revenueKurus) ?? [1]));
+  const maxSignups = Math.max(1, ...(data?.series.map((s) => s.signups) ?? [1]));
+  const maxUnlocks = Math.max(1, ...(data?.series.map((s) => s.unlocks) ?? [1]));
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-6">
-      {/* Başlık */}
-      <header className="flex flex-col gap-1">
-        <div className="flex items-center gap-3">
-          <span className="inline-block h-8 w-1.5 bg-[#B71C36]" aria-hidden />
-          <h1 className="text-2xl font-extrabold tracking-tight">
-            PerdeGo Admin
-          </h1>
-        </div>
-        <p className="text-sm text-[#F5F1EA]/64">
-          İçerik ve işletme yönetim paneli — Faz 2a temel altyapı ekranı.
-          İçerik yönetimi modülleri Faz 6&apos;da eklenecek.
-        </p>
-      </header>
-
-      {/* Ortam bilgisi */}
-      <section
-        aria-label="Ortam yapılandırması"
-        className="rounded-[4px] border border-[#F5F1EA]/8 bg-[#19191D] p-4"
-      >
-        <h2 className="text-sm font-semibold text-[#F5F1EA]/90">Ortam</h2>
-        <ul className="mt-2 space-y-1 text-sm text-[#F5F1EA]/64">
-          <li>
-            API adresi: <code className="text-[#F5F1EA]">{apiBase}</code>
-            {!envBase && (
-              <span className="ml-2 rounded-[2px] bg-[#B71C36]/18 px-1.5 py-0.5 text-xs text-[#B71C36]">
-                NEXT_PUBLIC_API_BASE_URL tanımlı değil — varsayılan kullanılıyor
-              </span>
-            )}
-          </li>
-        </ul>
-      </section>
-
-      {/* Sağlık kartları */}
-      <section aria-label="Sağlık durumu" className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-[4px] border border-[#F5F1EA]/8 bg-[#19191D] p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">API servisi</h2>
-            <span className={`text-sm font-semibold ${apiColor}`}>
-              {apiLabel[apiState]}
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-[#F5F1EA]/40">
-            {checkedAt ? `Son kontrol: ${checkedAt}` : "Henüz kontrol edilmedi"}
-          </p>
-          {apiState === "error" && apiError && (
-            <p
-              role="alert"
-              className="mt-3 rounded-[2px] bg-[#B71C36]/18 p-2 text-xs text-[#B71C36]"
-            >
-              Hata: {apiError} — API çalışıyor mu? (pnpm dev:api)
+    <AppShell>
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold">Panel Özeti</h1>
+            <p className="mt-0.5 text-sm text-[var(--pg-text-dim)]">
+              {data ? `${formatDate(data.range.from)} — ${formatDate(data.range.to)}` : "…"}
             </p>
-          )}
-        </div>
-
-        <div className="rounded-[4px] border border-[#F5F1EA]/8 bg-[#19191D] p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Veritabanı</h2>
-            <span
-              className={`text-sm font-semibold ${
-                dbCheck?.status === "up"
-                  ? "text-[#2E7D32]"
-                  : dbCheck === null
-                    ? "text-[#F5F1EA]/40"
-                    : "text-[#B71C36]"
-              }`}
-            >
-              {dbCheck === null
-                ? "—"
-                : dbCheck.status === "up"
-                  ? `Bağlı (${dbCheck.latencyMs ?? "?"} ms)`
-                  : "Bağlantı yok"}
-            </span>
           </div>
-          <p className="mt-2 text-xs text-[#F5F1EA]/40">
-            PostgreSQL — API üzerinden /health/db ile gerçek bağlantı testi.
-          </p>
-          {dbCheck?.status === "down" && dbCheck.error && (
-            <p
-              role="alert"
-              className="mt-3 rounded-[2px] bg-[#B71C36]/18 p-2 text-xs text-[#B71C36]"
-            >
-              {dbCheck.error} — PostgreSQL çalışıyor mu? (pnpm db:up)
-            </p>
-          )}
+          <div className="w-44">
+            <Select value={range} onChange={(e) => setRange(e.target.value)} aria-label="Tarih aralığı">
+              {RANGES.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
-      </section>
 
-      {/* Eylemler */}
-      <section className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            setApiState("loading");
-            void check();
-          }}
-          disabled={apiState === "loading"}
-          className="min-h-11 rounded-[4px] bg-[#B71C36] px-4 text-sm font-semibold text-[#F5F1EA] disabled:opacity-50"
-        >
-          {apiState === "loading" ? "Kontrol ediliyor…" : "Sağlığı Yenile"}
-        </button>
-      </section>
+        {error && (
+          <Card className="mb-6 border-l-4 border-l-[var(--pg-red)] p-4 text-sm text-[var(--pg-red)]">
+            {error}
+          </Card>
+        )}
 
-      <footer className="mt-auto pt-6 text-xs text-[#F5F1EA]/40">
-        PerdeGo · pnpm monorepo · apps/admin (Next.js 16) — admin uçları
-        Faz 6&apos;da RBAC ile devreye alınacak.
-      </footer>
-    </main>
+        {!data && !error && <Loading label="Panel verisi yükleniyor…" />}
+
+        {data && (
+          <div className="space-y-6">
+            {/* Üst metrikler */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                label="Toplam Kullanıcı"
+                value={data.users.total}
+                sub={`+${data.users.newInRange} (aralıkta) · ${data.users.active} aktif`}
+              />
+              <StatCard
+                label="Aktif Abonelik"
+                value={data.subscriptions.active}
+                tone="accent"
+                sub={
+                  [
+                    data.subscriptions.trialing > 0 ? `${data.subscriptions.trialing} deneme` : null,
+                    data.subscriptions.gracePeriod > 0 ? `${data.subscriptions.gracePeriod} ödeme aralığı` : null,
+                    data.subscriptions.canceled > 0 ? `${data.subscriptions.canceled} iptal` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "deneme yok"
+                }
+              />
+              <StatCard
+                label="Yayında İçerik"
+                value={data.catalog.publishedTitles}
+                sub={`${data.catalog.publishedEpisodes}/${data.catalog.totalEpisodes} bölüm yayında`}
+              />
+              <StatCard
+                label="Aralıkta Gelir"
+                value={formatKurus(data.purchases.inRangeRevenueKurus)}
+                tone="green"
+                sub={`${data.purchases.inRangeCount} satın alma`}
+              />
+            </div>
+
+            {/* Gelir & kredi özetleri */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card className="p-5">
+                <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--pg-text-dim)]">
+                  Satın Alma Özeti
+                </h2>
+                <dl className="grid grid-cols-2 gap-y-3 text-sm">
+                  <dt className="text-[var(--pg-text-dim)]">Toplam gelir</dt>
+                  <dd className="num text-right font-medium">{formatKurus(data.purchases.totalRevenueKurus)}</dd>
+                  <dt className="text-[var(--pg-text-dim)]">Toplam satın alma</dt>
+                  <dd className="num text-right font-medium">{data.purchases.totalCount}</dd>
+                  <dt className="text-[var(--pg-text-dim)]">Abonelik / paket</dt>
+                  <dd className="num text-right font-medium">
+                    {data.purchases.subscriptionCount} / {data.purchases.creditPackCount}
+                  </dd>
+                  <dt className="text-[var(--pg-text-dim)]">İade</dt>
+                  <dd className="num text-right font-medium text-[var(--pg-amber)]">
+                    {data.purchases.refundCount} · {formatKurus(data.purchases.refundedAmountKurus)}
+                  </dd>
+                </dl>
+              </Card>
+              <Card className="p-5">
+                <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--pg-text-dim)]">
+                  Kredi Kullanım Özeti
+                </h2>
+                <dl className="grid grid-cols-2 gap-y-3 text-sm">
+                  <dt className="text-[var(--pg-text-dim)]">Aralıkta satın alınan</dt>
+                  <dd className="num text-right font-medium">{data.credits.purchasedInRange}</dd>
+                  <dt className="text-[var(--pg-text-dim)]">Aralıkta verilen (hediye)</dt>
+                  <dd className="num text-right font-medium">{data.credits.grantedInRange}</dd>
+                  <dt className="text-[var(--pg-text-dim)]">Aralıkta harcanan</dt>
+                  <dd className="num text-right font-medium text-[var(--pg-accent-hover)]">{data.credits.spentInRange}</dd>
+                  <dt className="text-[var(--pg-text-dim)]">Cüzdan bakiyeleri (P/G)</dt>
+                  <dd className="num text-right font-medium">
+                    {data.credits.balancePurchased} / {data.credits.balanceGranted}
+                  </dd>
+                </dl>
+              </Card>
+            </div>
+
+            {/* Günlük seri grafiği (saf CSS — dış bağımlılık yok) */}
+            <Card className="p-5">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--pg-text-dim)]">
+                Günlük Akış <span className="ml-2 font-normal normal-case text-[var(--pg-text-faint)]">(kayıt · gelir · açma)</span>
+              </h2>
+              <div className="flex h-40 items-end gap-[3px] overflow-x-auto pb-1">
+                {data.series.map((point) => (
+                  <div key={point.day} className="group relative flex min-w-[10px] flex-1 flex-col justify-end gap-[2px]" title={`${point.day}: ${point.signups} kayıt, ${formatKurus(point.revenueKurus)}, ${point.unlocks} açma`}>
+                    <div className="rounded-t-[1px] bg-[var(--pg-blue)] opacity-80" style={{ height: `${Math.max(2, (point.signups / maxSignups) * 46)}px` }} />
+                    <div className="rounded-t-[1px] bg-[var(--pg-accent)]" style={{ height: `${Math.max(2, (point.revenueKurus / maxRevenue) * 60)}px` }} />
+                    <div className="rounded-t-[1px] bg-[var(--pg-green)] opacity-80" style={{ height: `${Math.max(2, (point.unlocks / maxUnlocks) * 30)}px` }} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-5 text-xs text-[var(--pg-text-faint)]">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-[1px] bg-[var(--pg-blue)]" /> Kayıt</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-[1px] bg-[var(--pg-accent)]" /> Gelir</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-[1px] bg-[var(--pg-green)]" /> Bölüm açma</span>
+              </div>
+            </Card>
+
+            {/* Son denetim kayıtları */}
+            <Card>
+              <div className="flex items-center justify-between px-5 py-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--pg-text-dim)]">
+                  Son Denetim Kayıtları
+                </h2>
+                <Link href="/audit" className="text-xs text-[var(--pg-accent-hover)] hover:underline">
+                  Tümünü gör →
+                </Link>
+              </div>
+              {data.recentAudit.length === 0 ? (
+                <EmptyState message="Henüz denetim kaydı yok." />
+              ) : (
+                <Table
+                  head={
+                    <>
+                      <Th>Eylem</Th>
+                      <Th>Varlık</Th>
+                      <Th>Zaman</Th>
+                    </>
+                  }
+                >
+                  {data.recentAudit.map((row) => (
+                    <tr key={row.id} className="row-hover">
+                      <Td>
+                        <span className="font-mono text-xs">{row.action}</span>
+                      </Td>
+                      <Td className="text-[var(--pg-text-dim)]">
+                        {row.entityType} · <span className="font-mono text-xs">{row.entityId.slice(0, 10)}…</span>
+                      </Td>
+                      <Td className="text-[var(--pg-text-dim)]">{formatDateTime(row.createdAt)}</Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Card>
+          </div>
+        )}
+      </div>
+    </AppShell>
   );
 }

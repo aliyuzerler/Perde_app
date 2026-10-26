@@ -23,6 +23,7 @@
     "db:seed": "pnpm --filter @perdego/api run db:seed",
     "db:studio": "pnpm --filter @perdego/api run db:studio",
     "postinstall": "pnpm --filter @perdego/api run db:generate",
-    "build": "pnpm -r --if-present run build"
+    "build": "pnpm -r --if-present run build",
+    "dev": "bash scripts/dev-stack.sh"
   }
 }

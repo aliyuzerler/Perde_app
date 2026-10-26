@@ -8,9 +8,12 @@
  *   POST   /admin/media/:mediaId/sync                   → sağlayıcı durumu yeniden çekilir
  *   GET    /admin/episodes/:episodeId/media             → bölümün medya kayıtları
  *   DELETE /admin/media/:mediaId                        → kayıt + sağlayıcı asset silimi
+ *   POST   /admin/episodes/:episodeId/preview           → yayın öncesi önizleme oturumu (FAZ 8)
  *
  * Oynatma yalnızca state=READY ve bölüm PUBLISHED iken açılır; işleme sürerken
- * bölüm herkese açık uçlarda görünmez (PROCESSING — Kural 6).
+ * bölüm herkese açık uçlarda görünmez (PROCESSING — Kural 6). Önizleme ucu
+ * EDITOR/ADMIN korumalıdır ve taslak bölümü de imzalı, kısa ömürlü kaynakla
+ * oynatılabilir kılar.
  */
 import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
@@ -42,6 +45,16 @@ export class AdminMediaController {
       { originalName: dto.originalName, contentType: dto.contentType },
       requestOrigin(req),
     );
+  }
+
+  @Post('episodes/:episodeId/preview')
+  @ApiOperation({ summary: 'Yayın öncesi önizleme oturumu (imzalı, kısa ömürlü — FAZ 8)' })
+  async createPreview(
+    @CurrentUser() actor: RequestUser,
+    @Param('episodeId') episodeId: string,
+    @Req() req: Request,
+  ) {
+    return this.media.createAdminPreview(actor, episodeId, requestOrigin(req));
   }
 
   @Get('media/:mediaId')

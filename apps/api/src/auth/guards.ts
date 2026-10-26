@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DomainError } from '../common/errors';
 import { toRequestUser, type RequestUser } from '../common/request-context';
 import { JwtService } from './jwt.service';
+import { StepUpService } from './step-up.service';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = (): MethodDecorator & ClassDecorator =>
@@ -95,6 +96,43 @@ export class RolesGuard implements CanActivate {
     if (userRank < minRank) {
       throw DomainError.forbidden('ADMIN_ONLY', 'errors.adminOnly');
     }
+    return true;
+  }
+}
+
+/**
+ * Adım-yukarı guard'ı (FAZ 8): kritik uçlarda parola ile YENİDEN doğrulama.
+ * Kullanıcı, yakın sürede (5 dk) POST /auth/step-up ile aldığı token'ı
+ * X-Step-Up-Token başlığıyla taşımak zorundadır. Token yalnızca sahibine
+ * geçerlidir (StepUpService.verify sub eşleşmesini denetler).
+ *
+ * Kullanım: @StepUp() dekoratörü + AuthModule ihracı (StepUpService global).
+ */
+export const STEP_UP_KEY = 'stepUpRequired';
+export const StepUp = (): MethodDecorator => SetMetadata(STEP_UP_KEY, true);
+
+@Injectable()
+export class StepUpGuard implements CanActivate {
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly stepUp: StepUpService,
+  ) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<boolean>(STEP_UP_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required) return true;
+
+    const request = context.switchToHttp().getRequest<Request>();
+    const user = request.user as RequestUser | null | undefined;
+    if (!user) {
+      throw DomainError.unauthorized('TOKEN_MISSING', 'errors.unauthorized');
+    }
+    const header = request.headers['x-step-up-token'];
+    const token = Array.isArray(header) ? header[0] : header;
+    this.stepUp.verify(token, user.id);
     return true;
   }
 }

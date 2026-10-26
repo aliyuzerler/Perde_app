@@ -9,6 +9,8 @@
  *   POST /api/v1/auth/forgot-password      → anonim (rate limit)
  *   POST /api/v1/auth/reset-password       → anahtar ile (anonim, rate limit)
  *   POST /api/v1/auth/change-password      → access token ile
+ *   POST /api/v1/auth/step-up              → access token ile (kritik işlem öncesi
+ *                                            parola yeniden doğrulama — FAZ 8)
  *   GET  /api/v1/auth/sessions             → aktif oturum listesi
  *   DELETE /api/v1/auth/sessions/:id       → tek oturum iptali
  *   POST /api/v1/auth/logout-all           → tüm oturumları iptal
@@ -35,6 +37,9 @@ import {
   type RefreshRequest,
   type ResetPasswordRequest,
   type VerifyEmailRequest,
+  type StepUpRequest,
+  type StepUpResponse,
+  stepUpRequestSchema,
 } from '@perdego/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { CurrentUser, type RequestUser } from '../common/request-context';
@@ -43,6 +48,7 @@ import type { Env } from '../config/env.schema';
 import { Public } from './guards';
 import { RateLimiterService } from './rate-limit.service';
 import { AuthService } from './auth.service';
+import { StepUpService } from './step-up.service';
 
 const hashIp = (ip: string | undefined): string | undefined =>
   ip ? createHash('sha256').update(ip).digest('hex').slice(0, 32) : undefined;
@@ -53,6 +59,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly stepUp: StepUpService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -164,6 +171,20 @@ export class AuthController {
     @Body(new ZodValidationPipe(changePasswordRequestSchema)) dto: ChangePasswordRequest,
   ): Promise<{ changed: true }> {
     return this.auth.changePassword(user, dto);
+  }
+
+  @Post('step-up')
+  @ApiOperation({
+    summary:
+      'Kritik işlem öncesi parola yeniden doğrulama (5 dk geçerli step-up token — FAZ 8)',
+  })
+  async stepUpToken(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(stepUpRequestSchema)) dto: StepUpRequest,
+  ): Promise<StepUpResponse> {
+    // Parola hatalıysa auth servisi 401 BAD_CREDENTIALS fırlatır.
+    await this.auth.verifyPassword(user.id, dto.password);
+    return this.stepUp.issueToken(user.id);
   }
 
   @Get('sessions')

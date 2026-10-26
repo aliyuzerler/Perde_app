@@ -166,6 +166,74 @@ export class MediaService {
   }
 
   /**
+   * Yönetim önizleme oturumu (FAZ 8): EDITOR/ADMIN, TASLAK/ARŞİV bölümü
+   * dahil oynatıp yayın öncesi denetim yapar. Herkese açık oynatma
+   * kurallarından BİLİNÇLİ olarak ayrıktır (Kural 6 — taslak herkese açık
+   * uçlarda görünmez); uç EDITOR/ADMIN rol korumalıdır ve oturum satırı
+   * yine bu yöneticiye yazılır (imzalı dosya servisi sahiplik denetler).
+   */
+  async createAdminPreview(user: RequestUser, episodeId: string, origin?: string) {
+    const episode = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      include: {
+        content: { select: { slug: true, titleTr: true } },
+        media: { where: { state: 'READY' }, orderBy: { createdAt: 'desc' }, include: { textTracks: true } },
+      },
+    });
+    if (!episode) {
+      throw DomainError.notFound('EPISODE_NOT_FOUND', 'errors.episodeNotFound', { episodeId });
+    }
+    const media = episode.media.find((row) => row.provider === this.provider.name.toUpperCase()) ?? episode.media[0];
+    if (!media) {
+      throw DomainError.conflict('EPISODE_NOT_READY', 'errors.episodeNotReady');
+    }
+    if (this.provider.name === 'LOCAL') {
+      this.provider.assertSamplePresent?.(media.providerAssetId);
+    }
+
+    const sessionId = randomUUID();
+    const expiresAt = new Date(Date.now() + this.env.PLAYBACK_TTL_SECONDS * 1000);
+    await this.prisma.playbackSession.create({
+      data: { id: sessionId, userId: user.id, episodeId, expiresAt },
+    });
+
+    const exp = Math.floor(expiresAt.getTime() / 1000);
+    const token = this.playbackToken(sessionId, episodeId, exp);
+    const base = (origin ?? this.env.PUBLIC_BASE_URL).replace(/\/+$/, '');
+
+    const sources = await this.provider.buildPlaybackSources({
+      episodeId,
+      providerAssetId: media.providerAssetId,
+      mediaId: media.id,
+      sessionId,
+      token,
+      exp,
+      origin: base,
+      textTracks: media.textTracks.map((t) => ({
+        language: t.language,
+        label: t.label,
+        sourceRef: t.sourceRef,
+        isDefault: t.isDefault,
+      })),
+    });
+
+    return {
+      episodeId,
+      episodeTitle: episode.titleTr,
+      contentSlug: episode.content.slug,
+      episodeStatus: episode.status,
+      provider: this.provider.name,
+      playbackUrl: sources.mp4 ?? sources.hls ?? '',
+      sources: {
+        ...(sources.hls ? { hls: sources.hls } : {}),
+        ...(sources.mp4 ? { mp4: sources.mp4 } : {}),
+      },
+      expiresAt: expiresAt.toISOString(),
+      quality: sources.quality,
+    };
+  }
+
+  /**
    * İmzalı oynatma istekleri için ortak doğrulama:
    *   1. HMAC token + süre,
    *   2. oturum iptali/süresi (DB'deki kayıtlı oturumlar),

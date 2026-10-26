@@ -3,4 +3,5 @@ export { JwtService } from './jwt.service';
 export { AuthService } from './auth.service';
 export { EmailTokenService } from './email-token.service';
 export { RateLimiterService } from './rate-limit.service';
-export { JwtAuthGuard, RolesGuard, Public, Roles } from './guards';
+export { JwtAuthGuard, RolesGuard, StepUpGuard, Public, Roles, StepUp } from './guards';
+export { StepUpService } from './step-up.service';

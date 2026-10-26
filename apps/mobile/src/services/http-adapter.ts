@@ -19,6 +19,7 @@ import type {
   AuthSession,
   AuthSessionListResponse,
   BillingConfigResponse,
+  DeviceResponse,
   EntitlementSyncRequest,
   EntitlementSyncResponse,
   EpisodeDetailResponse,
@@ -26,6 +27,8 @@ import type {
   FavoriteMutationResponse,
   HomeResponse,
   LegalDocument,
+  NotificationListResponse,
+  NotificationPreferences,
   PlaybackSession,
   PlansResponse,
   PublicUserProfile,
@@ -263,6 +266,51 @@ export function createHttpAdapter(client: ApiClient): ContentApiPort {
 
     async getLegalDocument(slug: 'terms' | 'privacy'): Promise<LegalDocument> {
       return client.get<LegalDocument>(`/legal/${slug}`);
+    },
+
+    // ---------------- Bildirimler (FAZ 9) ----------------
+    async registerDeviceToken(input: {
+      platform: 'IOS' | 'ANDROID';
+      pushToken: string;
+      appVersion?: string;
+      locale: 'tr' | 'en';
+    }): Promise<DeviceResponse> {
+      return client.post<DeviceResponse>('/notifications/devices', input);
+    },
+
+    async removeDeviceToken(deviceId: string): Promise<{ removed: boolean }> {
+      return client.delete<{ removed: boolean }>(
+        `/notifications/devices/${encodeURIComponent(deviceId)}`,
+      );
+    },
+
+    async listNotifications(params: {
+      page: number;
+      pageSize: number;
+    }): Promise<NotificationListResponse> {
+      const query = toQueryString({ page: params.page, pageSize: params.pageSize });
+      return client.get<NotificationListResponse>(`/notifications?${query}`);
+    },
+
+    async markNotificationRead(notificationId: string): Promise<{ marked: boolean }> {
+      return client.post<{ marked: boolean }>(
+        `/notifications/${encodeURIComponent(notificationId)}/read`,
+        {},
+      );
+    },
+
+    async markAllNotificationsRead(): Promise<{ marked: true }> {
+      return client.post<{ marked: true }>('/notifications/read-all', {});
+    },
+
+    async getNotificationPreferences(): Promise<NotificationPreferences> {
+      return client.get<NotificationPreferences>('/notifications/preferences');
+    },
+
+    async updateNotificationPreferences(
+      input: { newEpisode?: boolean; newContent?: boolean; promo?: boolean },
+    ): Promise<NotificationPreferences> {
+      return client.patch<NotificationPreferences>('/notifications/preferences', input);
     },
   };
 }

@@ -3,14 +3,14 @@ Canlı katalog probe → http://localhost:3000/api/v1
 PASS · P2C-01 health + health/db 200
 PASS · P2C-02 /home 200 + zarf
 PASS · P2C-03 /home banner > 0 — 2 banner
-PASS · P2C-04 /home bölüm > 0 — 7 bölüm
+PASS · P2C-04 /home bölüm > 0 — 5 bölüm
 PASS · P2C-05 /home HERO/RAIL/GRID düzenleri — HERO,RAIL,GRID
 PASS · P2C-06 kart alanları: kind+accessType+posterUrl — SERIES/SUBSCRIPTION
-PASS · P2C-07 titles sayfalama meta — total=12 pages=4
+PASS · P2C-07 titles sayfalama meta — total=8 pages=3
 PASS · P2C-08 sayfa 1 ve 2 kesişmez
 PASS · P2C-09 kind filtresi yalnız SERIES — 3 dizi
-PASS · P2C-10 accessType filtresi yalnız FREE — 8 ücretsiz
-PASS · P2C-11 category filtresi çalışır — 6 dram yapımı
+PASS · P2C-10 accessType filtresi yalnız FREE — 4 ücretsiz
+PASS · P2C-11 category filtresi çalışır — 4 dram yapımı
 PASS · P2C-12 sort parametresi kabul edilir
 PASS · P2C-13 arama meta ile döner — 2 sonuç
 PASS · P2C-14 sonuç yok → boş sayfa (hata değil)
@@ -20,7 +20,7 @@ PASS · P2C-17 detay 200 + sezonlar — 0 sezon
 FAIL · P2C-18 bölüm satırı: no+duration+access — yok
 PASS · P2C-20 bilinmeyen slug → 404 CONTENT_NOT_FOUND
 PASS · P2C-21 kategori listesi > 0 — 5 kategori
-PASS · P2C-22 kategori içeriği sayfalı — aksiyon: 4 yapım
+PASS · P2C-22 kategori içeriği sayfalı — aksiyon: 2 yapım
 PASS · P2C-23 kimliksiz watchlist → 401
 PASS · P2C-24 favori ekle (idempotent) + listede
 PASS · P2C-25 favoriden çıkar + listeden düşer

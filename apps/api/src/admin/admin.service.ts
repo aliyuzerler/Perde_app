@@ -10,6 +10,7 @@ import { DomainError } from '../common/errors';
 import { buildPageMeta, prismaSkipTake } from '../common/pagination';
 import { AuditService } from '../audit/audit.service';
 import { CreditsService } from '../credits/credits.service';
+import { PushDispatchService } from '../notifications/push-dispatch.service';
 import type { ContentStatus } from '@perdego/contracts';
 import { toContentSummary } from '../catalog/content-mapper';
 import type { Lang } from '../common/request-context';
@@ -32,6 +33,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly credits: CreditsService,
     private readonly audit: AuditService,
+    private readonly push: PushDispatchService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -83,7 +85,73 @@ export class AdminService {
         ledgerId,
         wallet: { purchased: after.purchasedBalance, granted: after.grantedBalance },
       };
+    }).then(async (result) => {
+      // FAZ 9: kredi işlemi bilgilendirmesi (SYSTEM — kapatılamaz; ERD).
+      // Hata düzeltmeyi etkilemesin.
+      try {
+        const delta = input.purchasedDelta + input.grantedDelta;
+        await this.push.notifyBillingEvent({
+          userId: input.targetUserId,
+          dedupKeyBase: `CREDIT_ADJUST:${result.ledgerId}`,
+          titleTr: delta > 0 ? 'Kredi hesabına eklendi' : 'Kredi hesabın güncellendi',
+          titleEn: delta > 0 ? 'Credits added to your account' : 'Your credit balance was updated',
+          bodyTr:
+            delta > 0
+              ? `Hesabına ${delta} kredi eklendi. Güncel bakiye: ${result.wallet.purchased + result.wallet.granted}.`
+              : `Kredi bakiyen güncellendi. Güncel bakiye: ${result.wallet.purchased + result.wallet.granted}.`,
+          bodyEn:
+            delta > 0
+              ? `${delta} credits were added to your account. New balance: ${result.wallet.purchased + result.wallet.granted}.`
+              : `Your credit balance was updated. New balance: ${result.wallet.purchased + result.wallet.granted}.`,
+          dataJson: { kind: 'BILLING' },
+        });
+      } catch {
+        // Bildirim hatası işlem akışını bozmaz.
+      }
+      return result;
     });
+  }
+
+  /** Yayın bildirimleri: içerik duyurusu (newContent) + taslak bölüm
+   * yayınları (favori/izleme listesine NEW_EPISODE). dedupKey tekrar
+   * yayınları yutar; hata yayını engellemesin. */
+  private async dispatchPublishNotifications(input: {
+    contentId: string;
+    slug: string;
+    titleTr: string;
+    titleEn: string;
+    kind: string;
+    seriesFormat: string | null;
+    includeEpisodes: boolean;
+  }): Promise<void> {
+    try {
+      const isMini = input.kind === 'SERIES' && input.seriesFormat === 'MINI';
+      await this.push.notifyTitlePublished({
+        contentId: input.contentId,
+        slug: input.slug,
+        titleTr: input.titleTr,
+        titleEn: input.titleEn,
+        isMini,
+      });
+      if (input.includeEpisodes) {
+        const episodes = await this.prisma.episode.findMany({
+          where: { contentId: input.contentId, status: 'PUBLISHED' },
+          select: { id: true, seasonNumber: true, episodeNumber: true },
+        });
+        for (const ep of episodes) {
+          await this.push.notifyEpisodePublished({
+            contentId: input.contentId,
+            episodeId: ep.id,
+            contentTitleTr: input.titleTr,
+            contentTitleEn: input.titleEn,
+            seasonNumber: ep.seasonNumber,
+            episodeNumber: ep.episodeNumber,
+          });
+        }
+      }
+    } catch {
+      // Bildirim hatası yayını bozmaz; audit zaten yazıldı.
+    }
   }
 
   /** İçerik taslağı oluşturur (Kural 6: taslak herkese açık uçlarda görünmez). */
@@ -179,6 +247,18 @@ export class AdminService {
       before: { status: content.status },
       after: { status: updated.status, episodeCount: content.episodes.length },
     });
+
+    // FAZ 9: yayın bildirimleri (asenkron izlenmez — yayını bloklamaz).
+    await this.dispatchPublishNotifications({
+      contentId,
+      slug: updated.slug,
+      titleTr: updated.titleTr,
+      titleEn: updated.titleEn,
+      kind: updated.kind,
+      seriesFormat: updated.seriesFormat,
+      includeEpisodes: true,
+    });
+
     return updated;
   }
 
@@ -345,6 +425,20 @@ export class AdminService {
       before: { status: content.status },
       after: { status: updated.status, publishedAt: updated.publishedAt?.toISOString() ?? null },
     });
+
+    // FAZ 9: yayına İLK geçişte bildirim; arşivden dönüşte dedupKey zaten
+    // engeller (event tetiklememesi için koşul burada da tutulur).
+    if (next === 'PUBLISHED' && content.status !== 'PUBLISHED') {
+      await this.dispatchPublishNotifications({
+        contentId,
+        slug: updated.slug,
+        titleTr: updated.titleTr,
+        titleEn: updated.titleEn,
+        kind: updated.kind,
+        seriesFormat: updated.seriesFormat,
+        includeEpisodes: true,
+      });
+    }
 
     return {
       id: updated.id,
@@ -1384,6 +1478,25 @@ export class AdminService {
       before: { status: before.status },
       after: { status: next },
     });
+
+    // FAZ 9: bölümün İLK yayını → favori/izleme listesindekilere NEW_EPISODE.
+    if (next === 'PUBLISHED' && !before.publishedAt) {
+      const content = await this.prisma.content.findUnique({
+        where: { id: updated.contentId },
+        select: { id: true, titleTr: true, titleEn: true, status: true },
+      });
+      if (content) {
+        await this.push.notifyEpisodePublished({
+          contentId: content.id,
+          episodeId: updated.id,
+          contentTitleTr: content.titleTr,
+          contentTitleEn: content.titleEn,
+          seasonNumber: updated.seasonNumber,
+          episodeNumber: updated.episodeNumber,
+        });
+      }
+    }
+
     return {
       id: updated.id,
       status: updated.status,

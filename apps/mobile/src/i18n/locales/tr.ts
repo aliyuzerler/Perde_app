@@ -309,6 +309,28 @@ export const tr = {
     legalPrivacy: 'Gizlilik Politikası',
     acceptTermsRequired: 'Devam etmek için koşulları onaylaman gerekir',
   },
+  notifications: {
+    title: 'Bildirimler',
+    centerEntry: 'Bildirimler',
+    preferencesEntry: 'Bildirim Tercihleri',
+    preferencesTitle: 'Bildirim Tercihleri',
+    markAllRead: 'Tümünü okundu işaretle',
+    empty: 'Henüz bildirimin yok.',
+    loadError: 'Bildirimler alınamadı.',
+    loadMore: 'Daha fazla',
+    preferencesLoadError: 'Tercihler alınamadı.',
+    prefNewEpisode: 'Takip ettiğim içeriklerde yeni bölüm',
+    prefNewEpisodeHint: 'Favorilerindeki yapımın yeni bölümü yayınlansa haber verir.',
+    prefNewContent: 'Yeni dizi ve filmler',
+    prefNewContentHint: 'Yayına giren yeni içeriklerden haberdar ol.',
+    prefPromo: 'Kampanyalar',
+    prefPromoHint: 'Promosyon ve duyurular.',
+    prefSystem: 'İşlem bildirimleri (zorunlu)',
+    prefSystemHint: 'Satın alma, kredi ve abonelik durum bildirimleri kapatılamaz.',
+    pushDenied: 'Push bildirim izni reddedildi. Sistem ayarlarından açabilirsin.',
+    pushUnsupported: 'Push bildirimler bu ortamda desteklenmiyor (gerçek cihaz gerekir).',
+  },
+
 } as const;
 
 /** Literal tipleri genişleterek diğer dil dosyalarının aynı yapıyı kullanmasını sağlar. */

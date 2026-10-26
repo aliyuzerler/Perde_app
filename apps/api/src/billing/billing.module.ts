@@ -17,9 +17,11 @@ import { CreditsService } from '../credits/credits.service';
 import { BILLING_PROVIDER, type BillingProviderPort } from './provider/billing-provider.port';
 import { RevenueCatProvider } from './provider/revenuecat.provider';
 import { SimulatedBillingProvider } from './provider/simulated.provider';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Global()
 @Module({
+  imports: [NotificationsModule],
   providers: [
     AuditService,
     IdempotencyService,

@@ -42,11 +42,23 @@
         }
       ],
       "expo-video",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      [
+        "expo-notifications",
+        {
+          "color": "#B71C36",
+          "mode": "production"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "__EAS_PROJECT_ID__"
+      }
     }
   }
 }

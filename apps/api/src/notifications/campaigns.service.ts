@@ -1,24 +1,32 @@
 /**
- * Bildirim kampanyaları servisi (FAZ 8) — yönetim duyuruları.
+ * Bildirim kampanyaları servisi (FAZ 8; FAZ 9'da push fan-out + tercih filtresi eklendi).
  *
  * Amaç: yeni bölüm/yeni içerik duyurusu, promo ve sistem mesajlarının
- * TÜM aktif kullanıcılara tek seferde gönderimi; ileri tarihli planlama.
+ * tek seferde gönderimi; ileri tarihli planlama.
  *
  * Güvenlik/kalite kararları:
  *  - Gönderim tek yönlü idempotent: kampanya yalnızca SCHEDULED→SENDING→SENT
  *    geçişiyle gönderilir; FAILED/CANCELLED kampanya asla yeniden koşmaz.
  *  - Alıcılar yalnızca status=ACTIVE kullanıcılardır (askıdaki/silinen
- *    hesaba bildirim gitmez).
- *  - Dispatch çevrimi 30 sn'de bir çalışır (NestJS lifecycle ile yönetilir);
- *    createMany chunk'lanır. Push gönderimi yoktur — uygulama içi merkez +
- *    satır kaydı (push Faz 7+ kapsamıdır).
+ *    hesaba bildirim gitmez) VE kampanya türüne karşılık gelen bildirim
+ *    tercihini açık olanlardır (FAZ 9: tercihle çelişen duyuru gitmez).
+ *  - Dispatch çevrimi 30 sn'de bir çalışır; createMany chunk'lanır.
+ *  - FAZ 9: oluşturulan her bildirim için kullanıcı cihazlarına push
+ *    gönderim satırları (PENDING) açılır; izleme NotificationSend'dedir.
  *  - Sonuç takibi: recipientCount (oluşturulan bildirim) ve okunma sayısı
  *    listede canlı hesaplanır (readCount).
  */
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainError } from '../common/errors';
-import type { AdminCampaign, AdminCampaignInput } from '@perdego/contracts';
+import { buildPageMeta } from '../common/pagination';
+import type {
+  AdminCampaign,
+  AdminCampaignInput,
+  AdminSendListParams,
+  AdminSendListResponse,
+} from '@perdego/contracts';
+import { PushDispatchService, type NotificationPrefField } from './push-dispatch.service';
 
 const DISPATCH_INTERVAL_MS = 30_000;
 const CREATE_CHUNK = 500;
@@ -29,7 +37,10 @@ export class CampaignsService implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly push: PushDispatchService,
+  ) {}
 
   onModuleInit(): void {
     // Sunucu ayaktayken planlanan kampanyaları zamanında yakalar.
@@ -202,8 +213,24 @@ export class CampaignsService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
+      // FAZ 9: tercih filtresi — türü kapatmış kullanıcıya duyuru gitmez
+      // (SYSTEM kapatılamaz; ERD salt okunur true).
+      const prefField: NotificationPrefField | null =
+        campaign.type === 'NEW_EPISODE'
+          ? 'newEpisode'
+          : campaign.type === 'NEW_CONTENT'
+            ? 'newContent'
+            : campaign.type === 'PROMO'
+              ? 'promo'
+              : null;
       const users = await this.prisma.user.findMany({
-        where: { status: 'ACTIVE', deletedAt: null },
+        where: {
+          status: 'ACTIVE',
+          deletedAt: null,
+          ...(prefField
+            ? { notificationPreference: { [prefField]: true } }
+            : {}),
+        },
         select: { id: true },
         orderBy: { id: 'asc' },
       });
@@ -221,14 +248,20 @@ export class CampaignsService implements OnModuleInit, OnModuleDestroy {
       };
 
       let created = 0;
+      const createdIds: string[] = [];
       for (let i = 0; i < users.length; i += CREATE_CHUNK) {
         const chunk = users.slice(i, i + CREATE_CHUNK);
-        const result = await this.prisma.notification.createMany({
-          data: chunk.map((u) => ({ userId: u.id, ...payload })),
+        const rows = chunk.map((u) => ({ userId: u.id, ...payload }));
+        const result = await this.prisma.notification.createManyAndReturn({
+          data: rows,
           skipDuplicates: true,
         });
-        created += result.count;
+        created += result.length;
+        createdIds.push(...result.map((r) => r.id));
       }
+
+      // FAZ 9: oluşturulan bildirimleri cihaz push kuyruğuna al.
+      await this.push.enqueueSendsForNotifications(createdIds);
 
       return await this.finalize(campaignId, created, users.length - created);
     } catch (err) {
@@ -263,5 +296,59 @@ export class CampaignsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     return row;
+  }
+
+  /**
+   * Kampanyanın push gönderim izleri (FAZ 9): cihaz başına durum + toplu
+   * sayaçlar. dataJson.campaignId üzerinden bildirimlere katılır.
+   */
+  async listSends(
+    campaignId: string,
+    params: AdminSendListParams,
+  ): Promise<AdminSendListResponse> {
+    const { page, pageSize, status } = params;
+    const campaign = await this.prisma.notificationCampaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true },
+    });
+    if (!campaign) {
+      throw DomainError.notFound('CAMPAIGN_NOT_FOUND', 'errors.notFound', { campaignId });
+    }
+    const notifWhere = {
+      dataJson: { path: ['campaignId'], equals: campaignId },
+    } as const;
+    const where = { notification: notifWhere, ...(status ? { status } : {}) };
+    const [rows, total, pending, sent, failed] = await Promise.all([
+      this.prisma.notificationSend.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { device: { select: { platform: true, pushToken: true } } },
+      }),
+      this.prisma.notificationSend.count({ where }),
+      this.prisma.notificationSend.count({ where: { ...where, status: 'PENDING' } }),
+      this.prisma.notificationSend.count({ where: { ...where, status: 'SENT' } }),
+      this.prisma.notificationSend.count({ where: { ...where, status: 'FAILED' } }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        notificationId: row.notificationId,
+        deviceId: row.deviceId,
+        platform: row.device.platform,
+        pushTokenMasked: `…${row.device.pushToken.slice(-4)}`,
+        status: row.status,
+        attempts: row.attempts,
+        provider: (row.provider === 'expo' || row.provider === 'simulated'
+          ? row.provider
+          : 'none') as 'expo' | 'simulated' | 'none',
+        lastError: row.lastError ?? null,
+        sentAt: row.sentAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      meta: buildPageMeta(page, pageSize, total),
+      stats: { pending, sent, failed },
+    };
   }
 }

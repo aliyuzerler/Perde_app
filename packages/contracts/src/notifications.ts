@@ -1,10 +1,62 @@
 /**
  * Bildirim sözleşmeleri (Faz 2b: cihaz token kaydı, uygulama içi merkezi,
- * tercihler). Push gönderimi sonraki fazdır (Faz 7).
+ * tercihler). FAZ 9: push gönderim izleme + derin bağlantı veri sözleşmesi.
  */
 import { z } from 'zod';
-import { pageMetaSchema } from './common';
+import { pageMetaSchema, pageRequestSchema } from './common';
 import { supportedLocaleSchema } from './user';
+
+/**
+ * Push derin bağlantı verisi (FAZ 9). Push mesajına YALNIZCA bu izin listesi
+ * taşınır: gizli bilgiler / ödeme verileri push payload'ına asla girmez
+ * (sıra: PushDispatchService.toPushMessage). Vurgulanır: kimlik/kart/fiyat yok.
+ */
+export const pushDeepLinkSchema = z.object({
+  kind: z.enum(['TITLE', 'EPISODE', 'CAMPAIGN', 'BILLING', 'SUB_REMINDER']),
+  contentId: z.string().min(1).optional(),
+  episodeId: z.string().min(1).optional(),
+  campaignId: z.string().min(1).optional(),
+  subscriptionId: z.string().min(1).optional(),
+});
+export type PushDeepLink = z.infer<typeof pushDeepLinkSchema>;
+
+/** Cihaz token'ı geçersizlik bildirimi (yönetim görünümü — FAZ 9). */
+export const adminNotificationSendItemSchema = z.object({
+  id: z.string().min(1),
+  notificationId: z.string().min(1),
+  deviceId: z.string().min(1),
+  platform: z.enum(['IOS', 'ANDROID']),
+  /** Gizlilik: maskelenmiş token (son 4 karakter). */
+  pushTokenMasked: z.string().min(1),
+  status: z.enum(['PENDING', 'SENT', 'FAILED']),
+  attempts: z.number().int().min(0),
+  provider: z.enum(['expo', 'simulated', 'none']),
+  lastError: z.string().nullable().optional(),
+  sentAt: z.string().nullable().optional(),
+  createdAt: z.string().min(1),
+});
+export type AdminNotificationSendItem = z.infer<
+  typeof adminNotificationSendItemSchema
+>;
+
+export const adminSendListParamsSchema = pageRequestSchema.extend({
+  status: z.enum(['PENDING', 'SENT', 'FAILED']).optional(),
+});
+export type AdminSendListParams = z.infer<typeof adminSendListParamsSchema>;
+
+export const adminSendStatsSchema = z.object({
+  pending: z.number().int().min(0),
+  sent: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+export type AdminSendStats = z.infer<typeof adminSendStatsSchema>;
+
+export const adminSendListResponseSchema = z.object({
+  items: z.array(adminNotificationSendItemSchema).default([]),
+  meta: pageMetaSchema,
+  stats: adminSendStatsSchema,
+});
+export type AdminSendListResponse = z.infer<typeof adminSendListResponseSchema>;
 
 /** POST /api/v1/notifications/devices gövdesi. */
 export const deviceRegisterSchema = z.object({

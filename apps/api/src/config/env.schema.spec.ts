@@ -93,6 +93,31 @@ describe('loadEnv (ortam değişkeni doğrulaması)', () => {
     expect(result.errors?.some((e) => e.includes('WEBHOOK_SIGNING_SECRET'))).toBe(true);
   });
 
+  it('FAZ 9: PUSH_PROVIDER varsayılanı none; simulated dev içinde serbest', () => {
+    const result = loadEnv({ ...baseEnv });
+    expect(result.ok).toBe(true);
+    expect(result.env?.PUSH_PROVIDER).toBe('none');
+
+    const sim = loadEnv({ ...baseEnv, PUSH_PROVIDER: 'simulated' });
+    expect(sim.ok).toBe(true);
+    expect(sim.env?.PUSH_PROVIDER).toBe('simulated');
+  });
+
+  it('FAZ 9: PRODUCTION + PUSH_PROVIDER=simulated reddedilir (sahte başarı yok)', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+      WEBHOOK_SIGNING_SECRET: 'cok-gizli-uretim-sigorta-anahtari-1234',
+      PUSH_PROVIDER: 'simulated',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.includes('PUSH_PROVIDER'))).toBe(true);
+  });
+
   it('DEVELOPMENT: WEBHOOK_SIGNING_SECRET tanımsız olabilir (fallback serbest)', () => {
     const result = loadEnv({ ...baseEnv, NODE_ENV: 'development' });
 

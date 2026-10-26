@@ -19,6 +19,7 @@ import type {
   CategoryDetailResponse,
   CategoryListResponse,
   CreditPacksResponse,
+  DeviceResponse,
   EntitlementSyncRequest,
   EntitlementSyncResponse,
   EpisodeDetailResponse,
@@ -27,6 +28,8 @@ import type {
   HomeResponse,
   LegalDocument,
   LoginRequest,
+  NotificationListResponse,
+  NotificationPreferences,
   PlaybackSession,
   PlansResponse,
   PublicUserProfile,
@@ -154,4 +157,27 @@ export interface ContentApiPort {
   restoreAccount(email: string, password: string): Promise<AuthSession>;
   /** Yasal metin. */
   getLegalDocument(slug: 'terms' | 'privacy'): Promise<LegalDocument>;
+
+  // ---------- Bildirimler (FAZ 9: push + uygulama içi merkez) ----------
+  /** Push token kaydet (upsert; çoklu cihaz destekli). */
+  registerDeviceToken(input: {
+    platform: 'IOS' | 'ANDROID';
+    pushToken: string;
+    appVersion?: string;
+    locale: 'tr' | 'en';
+  }): Promise<DeviceResponse>;
+  /** Push token kaldır (çıkışta). */
+  removeDeviceToken(deviceId: string): Promise<{ removed: boolean }>;
+  /** Uygulama içi bildirim merkezi (sayfalı + unreadCount). */
+  listNotifications(params: { page: number; pageSize: number }): Promise<NotificationListResponse>;
+  /** Tek bildirimi okundu işaretle. */
+  markNotificationRead(notificationId: string): Promise<{ marked: boolean }>;
+  /** Tüm bildirimleri okundu işaretle. */
+  markAllNotificationsRead(): Promise<{ marked: true }>;
+  /** Bildirim tercihleri. */
+  getNotificationPreferences(): Promise<NotificationPreferences>;
+  /** Bildirim tercihlerini güncelle (system kapatılamaz). */
+  updateNotificationPreferences(
+    input: { newEpisode?: boolean; newContent?: boolean; promo?: boolean },
+  ): Promise<NotificationPreferences>;
 }

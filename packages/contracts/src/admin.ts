@@ -642,6 +642,21 @@ export type AdminCampaign = z.infer<typeof adminCampaignSchema>;
 export const adminCampaignListResponseSchema = z.object({
   items: z.array(adminCampaignSchema).default([]),
 });
+
+/** POST /admin/push/dispatch yanıtı (FAZ 9 — manuel dispatch + süpürme). */
+export const adminPushDispatchResponseSchema = z.object({
+  dispatch: z.object({
+    tried: z.number().int().min(0),
+    sent: z.number().int().min(0),
+    failed: z.number().int().min(0),
+  }),
+  removedTokens: z.number().int().min(0),
+  reminders: z.number().int().min(0),
+  provider: z.enum(['expo', 'simulated', 'none']),
+});
+export type AdminPushDispatchResponse = z.infer<
+  typeof adminPushDispatchResponseSchema
+>;
 export type AdminCampaignListResponse = z.infer<
   typeof adminCampaignListResponseSchema
 >;

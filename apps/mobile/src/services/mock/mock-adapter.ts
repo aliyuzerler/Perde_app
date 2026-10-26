@@ -27,6 +27,9 @@ import type {
   PublicUserProfile,
   PurchaseValidate,
   PurchaseValidateResponse,
+  DeviceResponse,
+  NotificationListResponse,
+  NotificationPreferences,
   RegisterRequest,
   SearchParams,
   SearchResponse,
@@ -673,5 +676,120 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
       await delay(120);
       return mockAccountState.legal[slug];
     },
+
+    // ---------------- Bildirimler (FAZ 9: mock eşdeğerleri) ----------------
+    async registerDeviceToken(input: {
+      platform: 'IOS' | 'ANDROID';
+      pushToken: string;
+      appVersion?: string;
+      locale: 'tr' | 'en';
+    }): Promise<DeviceResponse> {
+      ensureDevEnvironment();
+      await delay(120);
+      const existing = mockNotificationState.devices.find((d) => d.pushToken === input.pushToken);
+      if (existing) {
+        existing.locale = input.locale;
+        existing.appVersion = input.appVersion;
+        return { id: existing.id, platform: existing.platform, pushTokenMasked: `…${input.pushToken.slice(-4)}` };
+      }
+      const device = {
+        id: `mock-dev-${mockNotificationState.devices.length + 1}`,
+        platform: input.platform,
+        pushToken: input.pushToken,
+        appVersion: input.appVersion,
+        locale: input.locale,
+      };
+      mockNotificationState.devices.push(device);
+      return { id: device.id, platform: device.platform, pushTokenMasked: `…${input.pushToken.slice(-4)}` };
+    },
+
+    async removeDeviceToken(deviceId: string): Promise<{ removed: boolean }> {
+      ensureDevEnvironment();
+      await delay(120);
+      const before = mockNotificationState.devices.length;
+      mockNotificationState.devices = mockNotificationState.devices.filter((d) => d.id !== deviceId);
+      return { removed: mockNotificationState.devices.length < before };
+    },
+
+    async listNotifications(params: { page: number; pageSize: number }): Promise<NotificationListResponse> {
+      ensureDevEnvironment();
+      await delay(150);
+      const sorted = [...mockNotificationState.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const start = (params.page - 1) * params.pageSize;
+      const items = sorted.slice(start, start + params.pageSize);
+      return {
+        items,
+        meta: {
+          page: params.page,
+          pageSize: params.pageSize,
+          totalItems: sorted.length,
+          totalPages: Math.max(1, Math.ceil(sorted.length / params.pageSize)),
+          hasNextPage: start + params.pageSize < sorted.length,
+        },
+        unreadCount: mockNotificationState.items.filter((n) => n.readAt === null).length,
+      };
+    },
+
+    async markNotificationRead(notificationId: string): Promise<{ marked: boolean }> {
+      ensureDevEnvironment();
+      await delay(100);
+      const row = mockNotificationState.items.find((n) => n.id === notificationId);
+      if (!row || row.readAt !== null) return { marked: false };
+      row.readAt = new Date().toISOString();
+      return { marked: true };
+    },
+
+    async markAllNotificationsRead(): Promise<{ marked: true }> {
+      ensureDevEnvironment();
+      await delay(120);
+      for (const row of mockNotificationState.items) {
+        if (row.readAt === null) row.readAt = new Date().toISOString();
+      }
+      return { marked: true };
+    },
+
+    async getNotificationPreferences(): Promise<NotificationPreferences> {
+      ensureDevEnvironment();
+      await delay(100);
+      return { ...mockNotificationState.preferences };
+    },
+
+    async updateNotificationPreferences(
+      input: { newEpisode?: boolean; newContent?: boolean; promo?: boolean },
+    ): Promise<NotificationPreferences> {
+      ensureDevEnvironment();
+      await delay(120);
+      mockNotificationState.preferences = {
+        ...mockNotificationState.preferences,
+        ...input,
+      };
+      return { ...mockNotificationState.preferences };
+    },
   };
 }
+
+/** Mock bildirim deposu (bellek içi; testler için okunur). */
+export const mockNotificationState = {
+  devices: [] as { id: string; platform: 'IOS' | 'ANDROID'; pushToken: string; appVersion?: string; locale: string }[],
+  items: [
+    {
+      id: 'mock-notif-1',
+      type: 'NEW_EPISODE' as const,
+      title: 'Kayıp Sinyal — yeni bölüm',
+      body: 'S1B4 yayında.',
+      data: { kind: 'EPISODE', contentId: 'mock-content-1', episodeId: 'mock-episode-4' },
+      readAt: null as string | null,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'mock-notif-2',
+      type: 'SYSTEM' as const,
+      title: 'Kredi hesabına eklendi',
+      body: 'Hesabına 50 kredi eklendi.',
+      data: { kind: 'BILLING' },
+      readAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+    },
+  ],
+  preferences: { newEpisode: true, newContent: true, promo: true, system: true } as NotificationPreferences,
+};

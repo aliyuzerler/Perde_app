@@ -35,6 +35,7 @@ import { buildPageMeta } from '../common/pagination';
 import { DomainError } from '../common/errors';
 import { CreditsService } from '../credits/credits.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { PushDispatchService } from '../notifications/push-dispatch.service';
 import {
   BILLING_PROVIDER,
   type BillingProviderPort,
@@ -50,6 +51,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly credits: CreditsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly push: PushDispatchService,
     @Inject(ENV) private readonly env: Env,
     @Inject(BILLING_PROVIDER) private readonly provider: BillingProviderPort,
   ) {}
@@ -420,16 +422,17 @@ export class BillingService {
     });
   }
 
-  /** İade (BR-12): işlem işaretlenir; kredi ise REFUND ledger, abonelikse EXPIRED. */
+  /** İade (BR-12): işlem işaretlenir; kredi ise REFUND ledger, abonelikse EXPIRED.
+   * FAZ 9: iade bilgilendirmesi (SYSTEM; tutar payload'da taşınmaz). */
   private async applyRefund(storeTransactionId: string, platform: 'IOS' | 'ANDROID'): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const refunded = await this.prisma.$transaction(async (tx) => {
       const storeTx = await tx.storeTransaction.findUnique({
         where: { platform_storeTransactionId: { platform, storeTransactionId } },
       });
       if (!storeTx) {
         throw new Error(`İade edilecek işlem bulunamadı: ${storeTransactionId}`);
       }
-      if (storeTx.refundedAt) return; // zaten iade edilmiş (idempotent)
+      if (storeTx.refundedAt) return { userId: null, storeTxId: storeTransactionId }; // zaten iade edilmiş (idempotent)
 
       await tx.storeTransaction.update({
         where: { id: storeTx.id },
@@ -479,7 +482,25 @@ export class BillingService {
           });
         }
       }
+      return { userId: storeTx.userId ?? null, storeTxId: storeTx.storeTransactionId };
     });
+    if (refunded.userId) {
+      try {
+        await this.push.notifyBillingEvent({
+          userId: refunded.userId,
+          dedupKeyBase: `REFUND:${refunded.storeTxId}`,
+          titleTr: 'İade işlendi',
+          titleEn: 'Refund processed',
+          bodyTr:
+            'İade talebin işlendi. Kredi paketi iadelerinde kullanılmayan kredin hesabından düşüldü; abonelik iadelerinde erişim sona erdi.',
+          bodyEn:
+            'Your refund has been processed. Unused credits were deducted for pack refunds; access ended for subscription refunds.',
+          dataJson: { kind: 'BILLING' },
+        });
+      } catch {
+        // Bildirim hatası iadeyi etkilemez.
+      }
+    }
   }
 
   // ==========================================================================
@@ -563,6 +584,13 @@ export class BillingService {
         currency: dto.currency,
         purchaseToken: dto.purchaseToken,
       });
+      // FAZ 9: satın alma bilgilendirmesi (SYSTEM; tutar/ödeme verisi payload'da YOK).
+      await this.notifyPurchaseSafely(
+        userId,
+        result.storeTransactionId,
+        'CREDIT_PACK',
+        verified.productId,
+      );
       return { ...result, productType: 'CREDIT_PACK' };
     }
 
@@ -582,7 +610,43 @@ export class BillingService {
       periodEndOverride: verified.expiresAt ?? undefined,
       periodType: verified.periodType,
     });
+    // FAZ 9: abonelik aktivasyonu bilgilendirmesi.
+    await this.notifyPurchaseSafely(
+      userId,
+      result.storeTransactionId,
+      'SUBSCRIPTION',
+      verified.productId,
+    );
     return { ...result, productType: 'SUBSCRIPTION' };
+  }
+
+  /** Satın alma bildirimi (FAZ 9): dedup mağaza işlem kimliğiyle; hata
+   * satın almayı etkilemez. Payload'da fiyat/ödeme verisi taşınmaz. */
+  private async notifyPurchaseSafely(
+    userId: string,
+    storeTransactionId: string,
+    productType: 'SUBSCRIPTION' | 'CREDIT_PACK',
+    productId: string,
+  ): Promise<void> {
+    try {
+      await this.push.notifyBillingEvent({
+        userId,
+        dedupKeyBase: `PURCHASE:${storeTransactionId}`,
+        titleTr: productType === 'CREDIT_PACK' ? 'Kredi satın alma tamamlandı' : 'Aboneliğin aktif',
+        titleEn: productType === 'CREDIT_PACK' ? 'Credit purchase completed' : 'Your subscription is active',
+        bodyTr:
+          productType === 'CREDIT_PACK'
+            ? 'Kredi paketin hesabına eklendi. İyi seyirler!'
+            : 'Abonelik planın etkinleştirildi. Tüm içeriklere erişebilirsin.',
+        bodyEn:
+          productType === 'CREDIT_PACK'
+            ? 'Your credit pack has been added to your account. Enjoy!'
+            : 'Your subscription plan has been activated. You can access all content.',
+        dataJson: { kind: 'BILLING', subscriptionId: productType === 'SUBSCRIPTION' ? productId : undefined },
+      });
+    } catch {
+      // Bildirim hatası satın almayı etkilemez.
+    }
   }
 
   // ==========================================================================

@@ -245,15 +245,29 @@ kayıtları da görünür):
 ], "meta": { … } }
 ```
 
-## 7. Bildirimler (Faz 7)
+## 7. Bildirimler (Faz 7 iskeleti + FAZ 9 push altyapısı)
 
 | Yöntem ve yol | Özet |
 |---------------|------|
-| `POST /devices` | Push token kaydı (`{ platform, pushToken, appVersion }`) |
-| `DELETE /devices/{id}` | Token iptali (çıkışta) |
-| `GET /notifications?page=&unreadOnly=` | Uygulama içi bildirim merkezi |
+| `POST /notifications/devices` | Push token kaydı (upsert; çoklu cihaz; `{ platform, pushToken, appVersion?, locale }`) |
+| `DELETE /notifications/devices/{id}` | Token iptali |
+| `GET /notifications?page=&pageSize=` | Uygulama içi bildirim merkezi (sayfalı + `unreadCount`) |
 | `POST /notifications/{id}/read` · `POST /notifications/read-all` | Okundu işaretleme |
-| `GET /notification-preferences` · `PATCH /notification-preferences` | Tercihler |
+| `GET /notifications/preferences` · `PATCH /notifications/preferences` | Tercihler (`system` salt okunur true) |
+
+**FAZ 9 push kuralları:** olay bildirimleri tercihe göre süzülür (tercihle
+çelişen kullanıcıya satır bile açılmaz); `dedupKey` aynı olayın aynı
+kullanıcıya iki kez düşmesini engeller; cihaz başına gönderim izi
+`notification_sends` tablosunda tutulur (PENDING/SENT/FAILED + attempts +
+hata izi); sağlayıcı `DeviceNotRegistered` dönerse token `invalidAt` ile
+işaretlenir ve TTL sonunda süpürülür; push payload'ı izin listesiyle
+sınırlandırıdır (tutar/ödeme verisi taşınmaz). Kurulum: docs/PUSH_SETUP.md.
+
+**Olay tetikleyicileri:** içerik/bölüm yayını (NEW_CONTENT /
+NEW_EPISODE — favori+takip hedefli), mağaza satın alma ve iade
+(SYSTEM/BILLING), admin kredi düzeltmesi (SYSTEM/BILLING), abonelik
+yenileme/bitiş/ödeme sorunu hatırlatması (SYSTEM/SUB_REMINDER,
+`SUB_REMINDER_DAYS` penceresi, dönem başına dedup).
 
 ## 8. Ödeme Altyapısı ve Sunucudan Sunucuya Uçlar (Faz 7)
 
@@ -314,6 +328,9 @@ oturumu (`POST /admin/episodes/{id}/upload` → presigned URL),
 alma, kredi düzeltmesi (`POST /admin/users/{id}/credits/adjust` — `note`
 zorunlu, ledger `ADMIN_ADJUSTMENT`), `store_transactions` listesi, bildirim
 kampanyası (`POST /admin/notifications/campaign`), metrik özeti (P).
+FAZ 9 ekleri: `GET /admin/notification-campaigns/{id}/sends` (cihaz başına
+push gönderim izleri + sayaçlar) ve `POST /admin/push/dispatch` (dispatch +
+süpürmeleri elle tetikleme — ADMIN + step-up).
 
 ## 10. Hata Kodları
 

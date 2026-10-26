@@ -60,6 +60,11 @@ function makeService(
       markPaused: vi.fn(async () => 1),
       markResumed: vi.fn(async () => 1),
     } as unknown as SubscriptionsService,
+    {
+      // FAZ 9: push bildirim stub — bildirim çağrıları testleri etkilemez.
+      notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })),
+      notifyUsersOfEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })),
+    } as never,
     { ...env, ...envOverride } as never,
     provider,
   );
@@ -121,6 +126,7 @@ describe('BillingService.ingestWebhook — idempotensi (Kural 7)', () => {
       prisma as unknown as PrismaService,
       { purchasePack: creditsPurchase } as unknown as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -159,6 +165,7 @@ describe('BillingService.ingestWebhook — idempotensi (Kural 7)', () => {
       prisma as unknown as PrismaService,
       { purchasePack: creditsPurchase } as unknown as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -355,6 +362,7 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
       prisma as unknown as PrismaService,
       {} as CreditsService,
       { activateFromPurchase: activate, findPlanByProductId: prisma.plan.findFirst } as unknown as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -393,6 +401,7 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
       prisma as unknown as PrismaService,
       {} as CreditsService,
       { cancelAtPeriodEnd, markExpired } as unknown as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -432,6 +441,7 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
       prisma as unknown as PrismaService,
       {} as CreditsService,
       { markBillingIssue } as unknown as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -462,6 +472,7 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
       prisma as unknown as PrismaService,
       { purchasePack } as unknown as CreditsService,
       { findPlanByProductId: vi.fn(async () => null) } as unknown as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -533,6 +544,7 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
       prisma as unknown as PrismaService,
       {} as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       { ...env, BILLING_PROVIDER: 'revenuecat' } as never,
       makeProvider({ verifyWebhookSource }),
     );
@@ -631,6 +643,7 @@ describe('BillingService.applyRefund — clawback kalan bakiyeyi aşamaz (F7-03)
       prisma as unknown as PrismaService,
       { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -653,6 +666,7 @@ describe('BillingService.applyRefund — clawback kalan bakiyeyi aşamaz (F7-03)
       prisma as unknown as PrismaService,
       { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );
@@ -697,6 +711,7 @@ describe('BillingService.applyRefund — clawback kalan bakiyeyi aşamaz (F7-03)
       prisma as unknown as PrismaService,
       { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
       {} as SubscriptionsService,
+      { notifyBillingEvent: vi.fn(async () => ({ created: 1, skipped: 0, notificationIds: ['n1'] })) } as never,
       env as never,
       makeProvider(),
     );

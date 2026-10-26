@@ -16,11 +16,11 @@ if ! node "$PSQL" "$DB_URL" "SELECT 1" >/dev/null 2>&1; then
 fi
 
 # 1) QA içeriklerini sil (katalog sıralamasını bozuyorlardı — P2C-18 pollution'u)
-log "qa8-* test içerikleri siliniyor…"
-node "$PSQL" "$DB_URL" "DELETE FROM episodes WHERE \"contentId\" IN (SELECT id FROM contents WHERE slug LIKE 'qa8-%')"
-node "$PSQL" "$DB_URL" "DELETE FROM seasons WHERE \"contentId\" IN (SELECT id FROM contents WHERE slug LIKE 'qa8-%')"
-node "$PSQL" "$DB_URL" "DELETE FROM contents WHERE slug LIKE 'qa8-%'"
-node "$PSQL" "$DB_URL" "SELECT count(*)::int AS kalan_qa8_icerik FROM contents WHERE slug LIKE 'qa8-%'"
+log "qa8-* ve qa9-* test içerikleri siliniyor…"
+node "$PSQL" "$DB_URL" "DELETE FROM episodes WHERE \"contentId\" IN (SELECT id FROM contents WHERE slug LIKE 'qa8-%' OR slug LIKE 'qa9-%')"
+node "$PSQL" "$DB_URL" "DELETE FROM seasons WHERE \"contentId\" IN (SELECT id FROM contents WHERE slug LIKE 'qa8-%' OR slug LIKE 'qa9-%')"
+node "$PSQL" "$DB_URL" "DELETE FROM contents WHERE slug LIKE 'qa8-%' OR slug LIKE 'qa9-%'"
+node "$PSQL" "$DB_URL" "SELECT count(*)::int AS kalan_qa8_icerik FROM contents WHERE slug LIKE 'qa8-%' OR slug LIKE 'qa9-%'"
 
 # 2) API başlat, P2C probe tekrarı
 LOG=/tmp/faz8-p2c-rerun.log

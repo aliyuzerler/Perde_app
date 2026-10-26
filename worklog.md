@@ -407,3 +407,25 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — kabul kriteri (temel CRUD gerçek backend verisiyle + yetkisizler backend'de kesiliyor) canlı kanıtla sağlandı; tek YÜKSEK kusur (production build kırığı) düzeltildi ve regresyonla doğrulandı.
 - Dürüst sınırlar: gerçek push teslimi (APNs/FCM tüneli yok), RC sandbox'lı gerçek mağaza satın alması, gerçek cihaz/EAS doğrulanamadı; video yükleme akışı faz4/6 probe regresyonuyla kanıtlandı.
 - Sonraki ajan için: kabul koşumu `bash scripts/qa-faz8-run-acceptance.sh` + `bash scripts/qa-faz8-run-ui-e2e.sh`; koşum sonrası qa8-* verisi kalır → katalog sayımlı önceki-faz probe'ları öncesi qa-faz8-cleanup-p2c-rerun.sh §1 bloğu; admin UI'da render anında readSession() YASAK — lib/use-session.ts kullanın; useParams Suspense içinde kalmalı (cacheComponents).
+
+---
+Task ID: 10
+Agent: Ana ajan (Z.ai)
+Task: FAZ 9 — uçtan uca bildirim altyapısı (Expo push + backend servisi + admin izleme + derin bağlantı)
+
+Work Log:
+- Keşif: FAZ 8 iskeletinde devices tablosu + bildirim merkezi uçları + tercihler hazırdı; push gönderim altyapısı (port, fan-out, izleme, dedup, temizlik, olay tetikleyicileri) ve mobil/admin tarafı eksikti. docker yok → Redis/BullMQ yerine DB destekli in-process çevrim kararı (PUSH_SETUP §6 geçiş yolu).
+- Migration 20261027090000_faz9_push: notification_sends (cihaz başına iz), devices.invalidAt/invalidReason, notifications.dedupKey + unique(userId,dedupKey).
+- contracts: pushDeepLinkSchema (izin listesi) + admin gönderim izleme şemaları (+7 test → 95).
+- API: push.provider.ts (ExpoPush 100'lük parça / Simulated — 'invalid' token → DeviceNotRegistered — / Noop; prod'da simulated yasak) + PushDispatchService (tercih süzme, dedupKey, çoklu cihaz fan-out, dispatch çevrimi, MAX_ATTEMPTS retry, geçersiz token işaretleme + TTL süpürme, abonelik hatırlatma süpürmesi [yenileme/bitiş/ödeme sorunu], izin listeli payload). Olay kancaları: title/episode İLK yayını, satın alma + iade (billing), kredi düzeltme (admin), kampanya tercih filtresi + fan-out. Admin: GET .../:id/sends + POST /admin/push/dispatch (ADMIN+step-up).
+- Mobil: expo-notifications 58.1.6 + app.json plugin; push-registration (izin→token→upsert; simülatör/Expo Go dürüst UNSUPPORTED; her açılışta yenileme), deep-link çözümleyici (EPISODE→player, TITLE→content, CAMPAIGN→merkez, BILLING→hesap), kök layout NotificationBridge (ön plan sunumu, dokunma, soğuk başlangıç), bildirim merkezi ekranı (okundu/tümü/sayfalama), tercih ekranı (system salt okunur), profil girişleri, i18n tr/en, http+mock adapter 7 metot.
+- BULUNAN VE DÜZELTİLEN KUSURLAR: F9-01 (YÜKSEK) dispatch bilet eşleştirmesi deviceId ile → aynı cihaza farklı bildirimlerde YANLIŞ satır güncelleniyordu → sendId korelasyonu (bütünleşik test canlı yakaladı); F9-02 (Orta) FAZ 9 env alanları loadEnv'e eklenmemişti → sağlayıcı 'none' düşüyordu; F9-03 (Orta) SimulatedPushProvider 'invalid' token'ı reddetmiyordu (temizlik test edilemez); F9-04 (Düşük) applyRefund erken dönüşü undefined → iade bildirimi çökerdi.
+- Testler: contracts 95/95, api 256/256 (faz9 entegrasyon 14 — gerçek PG), mobile 153/153 (derin bağlantı + mock adapter). typecheck/lint 4/4, build api+admin yeşil.
+- Canlı kabul: qa-faz9-run-acceptance.sh → 36/36 (cihaz token/upsert/çoklu cihaz, taslak favori kuralı, yayın bildirimleri, dedup, tercih süzme, dispatch izleme, kampanya fan-out + admin ucu + maskeli token, geçersiz token DB'de DeviceNotRegistered, hatırlatma dedup, in-app okuma) + DB denetimi. Önceki koşum kalıntılarını temizleyen deterministik runner.
+- Regresyon: faz8 kabul 102/102, faz7 TÜMÜ GEÇTİ, faz6 18/18, faz4 44/44, P2C 41/41 (temizlik sonrası), F5 16/16, AUTH 22/22. P2C temizlik betiği qa9 verisini de kapsayacak genişletildi.
+- Belgeler: docs/PUSH_SETUP.md (mimari, env, simülatör/Expo Go dürüst sınır tablosu, gerçek cihaz EAS adımları, izin reddi/token yenileme/uygulama kapalı test senaryoları, BullMQ geçişi, üretim checklist), API_CONTRACT §7 + §9 güncellemeleri, docs/phases/FAZ-9.md, .env.example ×2.
+
+Stage Summary:
+- Sonuç: FAZ 9 kapsamı tamam — 8 backend gereksinimi (tercihler, ayrı servis, çoklu cihaz, geçersiz token temizliği, mükerrer önleme, zamanlanmış görev karar, gönderim izleme, okundu durumu) + mobil push/derin bağlantı/merkez + admin izleme ekranı uçtan uca kanıtlı.
+- Dürüst sınırlar: gerçek cihaz push (APNs/FCM) doğrulanamadı — simüle sağlayıcıyla uçtan uca + exp.host adapter hazır; EAS projectId placeholder; BullMQ belgelendi uygulanmadı.
+- Sonraki ajan için: push-debug env'i (PUSH_DISPATCH_DEBUG) kaldırıldı; runner kalıntı temizliği kendi içinde; gerçek cihaz testi PUSH_SETUP §4-5; kampanya gönderim ekranı admin /notifications'ta "Gönderim" butonuyla.

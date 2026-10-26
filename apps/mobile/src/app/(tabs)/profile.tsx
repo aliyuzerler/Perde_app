@@ -177,6 +177,14 @@ export default function ProfileScreen() {
                 onPress={() => router.push('/account/change-password')}
               />
               <SettingRow
+                label={t('notifications.centerEntry')}
+                onPress={() => router.push('/notifications')}
+              />
+              <SettingRow
+                label={t('notifications.preferencesEntry')}
+                onPress={() => router.push('/account/notification-preferences')}
+              />
+              <SettingRow
                 label={t('auth.activeSessions')}
                 onPress={() => router.push('/account/sessions')}
               />

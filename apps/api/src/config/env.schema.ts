@@ -135,6 +135,22 @@ export const envSchema = z
     // --- Faz 3b: avatar yükleme ---------------------------------------------------
     /** Avatar dosyalarının kaydedildiği dizin (göreli: çalışma dizinine göre). */
     UPLOAD_DIR: z.string().default('uploads'),
+
+    // --- Faz 9: push bildirim altyapısı ------------------------------------------
+    /** none → push devrede değil (uygulama içi bildirimler yine yazılır;
+    * gönderim satırları PENDING kalır — sahte başarı YOK). simulated → yalnız
+    * dev/test (üretimde reddedilir); expo → Expo push servisi (exp.host). */
+    PUSH_PROVIDER: z.enum(['none', 'simulated', 'expo']).default('none'),
+    /** Expo push API kökü (testler için geçersiz kılınabilir). */
+    EXPO_PUSH_BASE_URL: z.string().url().default('https://exp.host'),
+    /** Push dispatch çevrim aralığı (ms) — PENDING gönderimleri toplar. */
+    PUSH_DISPATCH_INTERVAL_MS: intFromEnv('PUSH_DISPATCH_INTERVAL_MS', 5000, 3600000, 30000),
+    /** Geçersiz token'ların (DeviceNotRegistered) temizlik gecikmesi (gün). */
+    PUSH_INVALID_TOKEN_TTL_DAYS: intFromEnv('PUSH_INVALID_TOKEN_TTL_DAYS', 1, 180, 7),
+    /** Abonelik yenileme/bitiş hatırlatma penceresi (gün önce). */
+    SUB_REMINDER_DAYS: intFromEnv('SUB_REMINDER_DAYS', 1, 30, 3),
+    /** Hatırlatma/geçersiz-token süpürme çevrimi (ms). */
+    PUSH_SWEEP_INTERVAL_MS: intFromEnv('PUSH_SWEEP_INTERVAL_MS', 60000, 86400000, 3600000),
   })
   .refine(
     (env) =>
@@ -194,6 +210,16 @@ export const envSchema = z
         'PRODUCTION + BILLING_PROVIDER=revenuecat için REVENUECAT_PUBLIC_SDK_KEY zorunludur (mobil SDK herkese açık anahtar)',
       path: ['REVENUECAT_PUBLIC_SDK_KEY'],
     },
+  )
+  .refine(
+    (env) =>
+      // SAHTE BAŞARI YOK: simüle push sağlayıcı üretimde seçilemez (FAZ 9).
+      env.NODE_ENV !== 'production' || env.PUSH_PROVIDER !== 'simulated',
+    {
+      message:
+        'PRODUCTION ortamında PUSH_PROVIDER=simulated seçilemez (docs/PUSH_SETUP.md — expo sağlayıcısına geçin)',
+      path: ['PUSH_PROVIDER'],
+    },
   );
 
 export type Env = z.infer<typeof envSchema>;
@@ -244,6 +270,14 @@ export function loadEnv(source: NodeJS.ProcessEnv): EnvLoadResult {
     AUTH_RATE_LIMIT_REGISTER_MAX: source.AUTH_RATE_LIMIT_REGISTER_MAX,
     AUTH_RATE_LIMIT_RESET_MAX: source.AUTH_RATE_LIMIT_RESET_MAX,
     UPLOAD_DIR: source.UPLOAD_DIR,
+
+    // --- FAZ 9: push bildirim ortamı ------------------------------------------
+    PUSH_PROVIDER: source.PUSH_PROVIDER,
+    EXPO_PUSH_BASE_URL: source.EXPO_PUSH_BASE_URL,
+    PUSH_DISPATCH_INTERVAL_MS: source.PUSH_DISPATCH_INTERVAL_MS,
+    PUSH_INVALID_TOKEN_TTL_DAYS: source.PUSH_INVALID_TOKEN_TTL_DAYS,
+    SUB_REMINDER_DAYS: source.SUB_REMINDER_DAYS,
+    PUSH_SWEEP_INTERVAL_MS: source.PUSH_SWEEP_INTERVAL_MS,
   });
 
   if (parsed.success) {

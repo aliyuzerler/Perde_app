@@ -59,6 +59,7 @@ import {
   adminPlanUpdateSchema,
   adminSeasonInputSchema,
   adminSeasonUpdateSchema,
+  adminSendListParamsSchema,
   adminStatusChangeSchema,
   adminStoreTransactionListParamsSchema,
   adminTitleListParamsSchema,
@@ -76,6 +77,7 @@ import { parseQuery, ZodValidationPipe } from '../common/zod-validation.pipe';
 import { CurrentUser, CurrentLang, type Lang, type RequestUser } from '../common/request-context';
 import { Roles, StepUp } from '../auth/guards';
 import { CampaignsService } from '../notifications/campaigns.service';
+import { PushDispatchService } from '../notifications/push-dispatch.service';
 import { AdminService } from './admin.service';
 
 const adjustCreditsSchema = z.object({
@@ -108,6 +110,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly campaigns: CampaignsService,
+    private readonly push: PushDispatchService,
   ) {}
 
   @Get('audit-logs')
@@ -465,6 +468,37 @@ export class AdminController {
   @ApiOperation({ summary: 'Kampanya listesi (durum + sonuç sayaçlarıyla)' })
   async listCampaigns() {
     return this.campaigns.list();
+  }
+
+  @Roles('ADMIN')
+  @StepUp()
+  @Post('push/dispatch')
+  @ApiOperation({
+    summary:
+      'Push dispatch + süpürmeleri elle tetikle (FAZ 9): PENDING gönderimler, geçersiz token temizliği, abonelik hatırlatmaları',
+  })
+  async dispatchPush(@CurrentUser() actor: RequestUser) {
+    void actor;
+    const dispatch = await this.push.dispatchPending();
+    const sweeps = await this.push.runSweeps();
+    return {
+      dispatch,
+      removedTokens: sweeps.removed,
+      reminders: sweeps.reminders,
+      provider: this.push.providerName,
+    };
+  }
+
+  @Get('notification-campaigns/:id/sends')
+  @ApiOperation({
+    summary: 'Kampanya push gönderim izleri (cihaz başına PENDING/SENT/FAILED + sayaçlar — FAZ 9)',
+  })
+  async listCampaignSends(
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    const params = parseQuery(adminSendListParamsSchema, query);
+    return this.campaigns.listSends(id, params);
   }
 
   @Roles('ADMIN')

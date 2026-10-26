@@ -61,6 +61,7 @@ export default function NotificationsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [sendsFor, setSendsFor] = useState<{ id: string; title: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -149,7 +150,14 @@ export default function NotificationsPage() {
                       {campaign.sentAt && <p className="text-xs">Gönderim: {formatDateTime(campaign.sentAt)}</p>}
                     </Td>
                     <Td>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          small
+                          variant="subtle"
+                          onClick={() => setSendsFor({ id: campaign.id, title: campaign.titleTr })}
+                        >
+                          Gönderim
+                        </Button>
                         {(campaign.status === "SCHEDULED" || campaign.status === "DRAFT") && (
                           <Button small variant="danger" disabled={!isAdmin} onClick={() => void cancel(campaign)}>
                             İptal Et
@@ -173,6 +181,8 @@ export default function NotificationsPage() {
             }}
           />
         )}
+
+        {sendsFor && <SendsModal campaignId={sendsFor.id} title={sendsFor.title} onClose={() => setSendsFor(null)} />}
       </div>
     </AppShell>
   );
@@ -274,6 +284,130 @@ function CreateCampaignModal({ onClose, onSaved }: { onClose: () => void; onSave
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+// --- Gönderim izleme (FAZ 9) ------------------------------------------------
+
+interface SendRow {
+  id: string;
+  notificationId: string;
+  deviceId: string;
+  platform: "IOS" | "ANDROID";
+  pushTokenMasked: string;
+  status: "PENDING" | "SENT" | "FAILED";
+  attempts: number;
+  provider: "expo" | "simulated" | "none";
+  lastError: string | null;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+interface SendsResponse {
+  items: SendRow[];
+  meta: { page: number; pageSize: number; totalItems: number; totalPages: number };
+  stats: { pending: number; sent: number; failed: number };
+}
+
+/** Kampanyanın cihaz başına push gönderim izleri (GET /admin/.../:id/sends). */
+function SendsModal({ campaignId, title, onClose }: { campaignId: string; title: string; onClose: () => void }) {
+  const [data, setData] = useState<SendsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: "20" });
+      if (status) params.set("status", status);
+      const res = await api.get<SendsResponse>(
+        `/admin/notification-campaigns/${campaignId}/sends?${params.toString()}`,
+      );
+      setData(res);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Gönderim izleri alınamadı");
+    }
+  }, [campaignId, page, status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await load();
+      void cancelled;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  return (
+    <Modal open onClose={onClose} title={`Gönderim İzleri — ${title}`} wide>
+      <div className="mb-3 flex flex-wrap gap-2 text-xs">
+        <span className="rounded-[3px] border border-[var(--pg-border)] px-2 py-1">Bekleyen: <b className="num">{data?.stats.pending ?? "—"}</b></span>
+        <span className="rounded-[3px] border border-[var(--pg-border)] px-2 py-1 text-[var(--pg-green)]">Gönderildi: <b className="num">{data?.stats.sent ?? "—"}</b></span>
+        <span className="rounded-[3px] border border-[var(--pg-border)] px-2 py-1 text-[var(--pg-red)]">Başarısız: <b className="num">{data?.stats.failed ?? "—"}</b></span>
+        <select
+          className="ml-auto rounded-[3px] border border-[var(--pg-border)] bg-[var(--pg-surface-2)] px-2 py-1 text-xs"
+          value={status}
+          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+          aria-label="Durum filtresi"
+        >
+          <option value="">Tümü</option>
+          <option value="PENDING">Bekleyen</option>
+          <option value="SENT">Gönderildi</option>
+          <option value="FAILED">Başarısız</option>
+        </select>
+      </div>
+      {error && <Card className="mb-3 p-3 text-sm text-[var(--pg-red)]">{error}</Card>}
+      {!data && !error && <Loading label="Gönderim izleri yükleniyor…" />}
+      {data && data.items.length === 0 && <EmptyState message="Bu kampanya için gönderim kaydı yok (cihaz token'ı olmayan kampanyalar yalnızca uygulama içi bildirim oluşturur)." />}
+      {data && data.items.length > 0 && (
+        <>
+          <Table
+            head={
+              <>
+                <Th>Cihaz</Th>
+                <Th>Token</Th>
+                <Th>Durum</Th>
+                <Th>Deneme / Sağlayıcı</Th>
+                <Th>Hata</Th>
+                <Th>Zaman</Th>
+              </>
+            }
+          >
+            {data.items.map((row) => (
+              <tr key={row.id} className="row-hover">
+                <Td>{row.platform}</Td>
+                <Td className="num text-[var(--pg-text-dim)]">{row.pushTokenMasked}</Td>
+                <Td>
+                  <StatusBadge status={row.status} />
+                </Td>
+                <Td className="num text-[var(--pg-text-dim)]">
+                  {row.attempts} / {row.provider}
+                </Td>
+                <Td className="max-w-[220px] truncate text-xs text-[var(--pg-red)]">
+                  <span title={row.lastError ?? undefined}>{row.lastError ?? "—"}</span>
+                </Td>
+                <Td className="text-[var(--pg-text-dim)]">
+                  {row.sentAt ? formatDateTime(row.sentAt) : formatDateTime(row.createdAt)}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+          <div className="mt-3 flex items-center justify-between text-xs text-[var(--pg-text-dim)]">
+            <span>Sayfa {data.meta.page} / {data.meta.totalPages} ({data.meta.totalItems} kayıt)</span>
+            <div className="flex gap-2">
+              <Button small variant="subtle" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Önceki</Button>
+              <Button small variant="subtle" disabled={page >= data.meta.totalPages} onClick={() => setPage((p) => p + 1)}>Sonraki</Button>
+            </div>
+          </div>
+        </>
+      )}
+      <div className="mt-4 flex justify-end">
+        <Button variant="ghost" onClick={onClose}>Kapat</Button>
+      </div>
     </Modal>
   );
 }

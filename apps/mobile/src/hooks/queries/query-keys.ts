@@ -22,4 +22,7 @@ export const queryKeys = {
   /** Ödeme yapılandırması ve mağaza önerileri (FAZ 7). */
   billingConfig: ['billingConfig'] as const,
   storeOfferings: ['storeOfferings'] as const,
+  /** Bildirim merkezi + tercihleri (FAZ 9). */
+  notifications: (page: number) => ['notifications', page] as const,
+  notificationPreferences: ['notificationPreferences'] as const,
 };

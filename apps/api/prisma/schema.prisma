@@ -249,9 +249,13 @@ model Device {
   locale       Locale         @default(tr)
   lastActiveAt DateTime       @default(now())
   createdAt    DateTime       @default(now())
+  /// Push sağlayıcı "DeviceNotRegistered" döndüğünde dolar (FAZ 9).
+  invalidAt    DateTime?
+  invalidReason String?
 
   sessions        Session[]
   playbackSessions PlaybackSession[]
+  sends           NotificationSend[]
 
   @@index([userId])
   @@map("devices")
@@ -867,12 +871,48 @@ model Notification {
   bodyEn     String
   /// Deep-link verisi.
   dataJson   Json?
+  /// Aynı olayın aynı kullanıcıya iki kez düşmesini engelleyen anahtar
+  /// (örn. EP_PUBLISHED:{episodeId}:{userId}); kampanyalarda boştur (FAZ 9).
+  dedupKey   String?
   pushSentAt DateTime?
   readAt     DateTime?
   createdAt  DateTime         @default(now())
 
+  sends      NotificationSend[]
+
   @@index([userId, createdAt(sort: Desc)])
+  /// Postgres'te NULL dedupKey mükerrerliğe girmez (kampanya satırları güvenli).
+  @@unique([userId, dedupKey])
   @@map("notifications")
+}
+
+/// Push gönderim izleme kaydı: cihaz başına ayrı durum (FAZ 9).
+/// PENDING → dispatch çevrimi → SENT/FAILED; token geçersizse FAILED + TOKEN_INVALID.
+enum NotificationSendStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model NotificationSend {
+  id             String                 @id @default(cuid())
+  notificationId String
+  notification   Notification           @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  deviceId       String
+  device         Device                 @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  status         NotificationSendStatus @default(PENDING)
+  attempts       Int                    @default(0)
+  /// 'expo' | 'simulated' | 'none' — hangi sağlayıcıyla denendi (izlenebilirlik).
+  provider       String                 @default("none")
+  ticketId       String?
+  lastError      String?
+  sentAt         DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([notificationId, deviceId])
+  @@index([status, createdAt])
+  @@map("notification_sends")
 }
 
 model NotificationPreference {

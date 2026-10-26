@@ -1,0 +1,110 @@
+===============================================================
+FAZ 10 TEMEL KOŞUM — 2026-10-26T11:56:23Z
+===============================================================
+[faz10-baseline] PostgreSQL hazır
+[faz10-baseline] migration'lar güncel
+[faz10-baseline] typecheck başlıyor (pnpm -r)
+Scope: 4 of 5 workspace projects
+apps/admin typecheck$ tsc --noEmit
+apps/mobile typecheck$ tsc --noEmit
+apps/admin typecheck: Done
+packages/contracts typecheck$ tsc --noEmit
+packages/contracts typecheck: Done
+apps/api typecheck$ tsc --noEmit
+apps/mobile typecheck: Done
+apps/api typecheck: Done
+[faz10-baseline] TYPECHECK: YEŞİL
+[faz10-baseline] lint başlıyor (pnpm -r)
+Scope: 4 of 5 workspace projects
+apps/admin lint$ eslint .
+apps/mobile lint$ expo lint
+apps/mobile lint: Done
+packages/contracts lint$ eslint .
+packages/contracts lint: Done
+apps/api lint$ eslint .
+apps/admin lint: Done
+apps/api lint: Done
+[faz10-baseline] LINT: YEŞİL
+[faz10-baseline] contracts testleri
+ ✓ src/__tests__/contracts-faz4-media.test.ts (10 tests) 15ms
+ ✓ src/__tests__/contracts-faz3b.test.ts (10 tests) 14ms
+ ✓ src/__tests__/contracts-faz9-notifications.test.ts (7 tests) 11ms
+
+ Test Files  7 passed (7)
+      Tests  95 passed (95)
+   Start at  11:56:53
+   Duration  1.43s (import 72%, tests 16%, transform 6%, worker 5%)
+
+    Isolate  7 workers spawned · ~90ms startup each (spawn + environment, per file)
+             at least ~539ms faster with isolate: false — reuses workers across files instead of one per file
+
+[faz10-baseline] CONTRACTS: YEŞİL
+[faz10-baseline] API testleri (vitest, gerçek PostgreSQL)
+AssertionError: expected 0 to be greater than or equal to 1
+ ❯ src/integration.faz8-admin.spec.ts:667:42
+    665|       { token: adminToken },
+    666|     );
+    667|     expect(logs.body.data!.items.length).toBeGreaterThanOrEqual(1);
+       |                                          ^
+    668|   });
+    669| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed | 26 passed (27)
+      Tests  5 failed | 273 passed (278)
+   Start at  11:56:55
+   Duration  30.97s (tests 85%, import 14%, worker 1%)
+
+    Isolate  27 workers spawned · ~95ms startup each (spawn + environment, per file)
+             at least ~2.46s faster with isolate: false — reuses workers across files instead of one per file
+
+[faz10-baseline] API: KIRMIZI
+[faz10-baseline] mobil testleri (jest-expo)
+PASS src/i18n/__tests__/i18n.test.ts
+PASS src/services/__tests__/secure-storage.test.ts
+PASS src/services/__tests__/notification-deep-link.test.ts
+PASS src/theme/__tests__/tokens.test.ts
+PASS src/theme/__tests__/placeholder.test.ts
+PASS src/utils/__tests__/access.test.ts
+
+Test Suites: 19 passed, 19 total
+Tests:       153 passed, 153 total
+Snapshots:   0 total
+Time:        37.748 s, estimated 38 s
+Ran all test suites.
+[faz10-baseline] MOBILE: YEŞİL
+[faz10-baseline] API production build (nest build)
+webpack 5.106.2 compiled [1m[32msuccessfully[39m[22m in 9620 ms
+[faz10-baseline] BUILD API: YEŞİL
+[faz10-baseline] Admin production build (next build)
+  Generating static pages using 1 worker (3/13) 
+  Generating static pages using 1 worker (6/13) 
+  Generating static pages using 1 worker (9/13) 
+✓ Generating static pages using 1 worker (13/13) in 394ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /audit
+├ ○ /home-layout
+├ ○ /login
+├ ○ /notifications
+├ ○ /revenue
+├ ○ /titles
+├   /titles/[id]
+│ └ ◐ /titles/[id]
+├ ○ /users
+└   /users/[id]
+  └ ◐ /users/[id]
+
+
+○  (Static)             prerendered as static content
+◐  (Partial Prerender)  prerendered as static HTML with dynamic server-streamed content
+
+[faz10-baseline] BUILD ADMIN: YEŞİL
+===============================================================
+FAZ 10 TEMEL KOŞUM SONUCU: KIRMIZI ADIM VAR
+===============================================================

@@ -53,6 +53,20 @@ export function configureApp(app: INestApplication, env: Env): void {
     app.enableCors({ origin: origins });
   }
 
+  // FAZ 10 (bulgu F10-01): temel güvenlik başlıkları. NestJS/Express varsayılanı
+  // bunları eklemez; helmet ek bağımlılığı yerine minimal, test edilebilir
+  // middleware kullanılır. HSTS yalnızca üretimde (TLS'i proxy sonlandırırken
+  // geliştirmede http uyarısı üretmemesi için).
+  app.use(((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  }) as never);
+
   // Zarf + hata filtresi (tüm istisnalar ApiEnvelope'a çevrilir).
   const reflector = app.get(Reflector);
   app.useGlobalInterceptors(new EnvelopeInterceptor(reflector));
@@ -72,21 +86,27 @@ export function configureApp(app: INestApplication, env: Env): void {
   );
 
   // Swagger / OpenAPI — sözleşme şemaları bileşen olarak kaydedilir.
-  const config = new DocumentBuilder()
-    .setTitle('PerdeGo API')
-    .setDescription(
-      'Dikey kısa film ve mini dizi izleme platformu REST API (v1). ' +
-        'Tüm yanıtlar ApiEnvelope zarfı kullanır: { ok: true, data } | { ok: false, error: { code, message, details } }. ' +
-        'Kimlik: Authorization: Bearer <accessToken> (RS256, 15 dk). Para/kredi POST uçlarında Idempotency-Key zorunludur (BR-06).',
-    )
-    .setVersion('1.0.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'accessToken')
-    .addApiKey({ type: 'apiKey', name: 'Idempotency-Key', in: 'header' }, 'idempotencyKey')
-    .build();
-  const document = SwaggerModule.createDocument(app as never, config, { deepScanRoutes: true });
-  registerContractSchemas(document);
-  SwaggerModule.setup('api/docs', app as never, document, {
-    customSiteTitle: 'PerdeGo API — Swagger',
-    swaggerOptions: { persistAuthorization: true },
-  });
+  // FAZ 10 (bulgu F10-03): üretimde varsayılan KAPALI — tam API dokümanı
+  // herkese açık saldırı yüzeyi haritasıdır. Geliştirme/test'te açık; üretimde
+  // yalnızca SWAGGER_ENABLED=true ile bilinçli açılır.
+  const swaggerEnabled = env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production';
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder()
+      .setTitle('PerdeGo API')
+      .setDescription(
+        'Dikey kısa film ve mini dizi izleme platformu REST API (v1). ' +
+          'Tüm yanıtlar ApiEnvelope zarfı kullanır: { ok: true, data } | { ok: false, error: { code, message, details } }. ' +
+          'Kimlik: Authorization: Bearer <accessToken> (RS256, 15 dk). Para/kredi POST uçlarında Idempotency-Key zorunludur (BR-06).',
+      )
+      .setVersion('1.0.0')
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'accessToken')
+      .addApiKey({ type: 'apiKey', name: 'Idempotency-Key', in: 'header' }, 'idempotencyKey')
+      .build();
+    const document = SwaggerModule.createDocument(app as never, config, { deepScanRoutes: true });
+    registerContractSchemas(document);
+    SwaggerModule.setup('api/docs', app as never, document, {
+      customSiteTitle: 'PerdeGo API — Swagger',
+      swaggerOptions: { persistAuthorization: true },
+    });
+  }
 }

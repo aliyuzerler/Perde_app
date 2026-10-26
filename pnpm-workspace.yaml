@@ -23,3 +23,7 @@ allowBuilds:
   # postinstall'ı — çalıştırılmaz, açıkça reddedilir (pnpm 12'de belirsiz
   # "ignored build" durumu hataya düşer; false = bilinçli ret kararı).
   '@scarf/scarf': false
+overrides:
+  js-yaml@5: 5.4.1
+  'multer@>=2.0.0 <2.5.0': 2.5.0
+

@@ -131,6 +131,15 @@ export const envSchema = z
     AUTH_RATE_LIMIT_LOGIN_MAX: intFromEnv('AUTH_RATE_LIMIT_LOGIN_MAX', 1, 100, 5),
     AUTH_RATE_LIMIT_REGISTER_MAX: intFromEnv('AUTH_RATE_LIMIT_REGISTER_MAX', 1, 100, 3),
     AUTH_RATE_LIMIT_RESET_MAX: intFromEnv('AUTH_RATE_LIMIT_RESET_MAX', 1, 100, 3),
+    /** FAZ 10: step-up (parola yeniden doğrulama) brute-force sınırı. */
+    AUTH_RATE_LIMIT_STEPUP_MAX: intFromEnv('AUTH_RATE_LIMIT_STEPUP_MAX', 1, 100, 5),
+
+    /** FAZ 10: Swagger /api/docs üretimde varsayılan KAPALI; zorunlu hale
+     * getirmek için SWAGGER_ENABLED=true verilir (geliştirme/test'te açık). */
+    SWAGGER_ENABLED: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
 
     // --- Faz 3b: avatar yükleme ---------------------------------------------------
     /** Avatar dosyalarının kaydedildiği dizin (göreli: çalışma dizinine göre). */
@@ -269,6 +278,8 @@ export function loadEnv(source: NodeJS.ProcessEnv): EnvLoadResult {
     AUTH_RATE_LIMIT_LOGIN_MAX: source.AUTH_RATE_LIMIT_LOGIN_MAX,
     AUTH_RATE_LIMIT_REGISTER_MAX: source.AUTH_RATE_LIMIT_REGISTER_MAX,
     AUTH_RATE_LIMIT_RESET_MAX: source.AUTH_RATE_LIMIT_RESET_MAX,
+    AUTH_RATE_LIMIT_STEPUP_MAX: source.AUTH_RATE_LIMIT_STEPUP_MAX,
+    SWAGGER_ENABLED: source.SWAGGER_ENABLED,
     UPLOAD_DIR: source.UPLOAD_DIR,
 
     // --- FAZ 9: push bildirim ortamı ------------------------------------------

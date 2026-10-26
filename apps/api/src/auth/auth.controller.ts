@@ -70,7 +70,7 @@ export class AuthController {
   /** Kayan pencere limiti. IP yoksa (beklenmedik ortam) sınır uygulanmaz. */
   private limit(
     req: Request,
-    bucket: 'login' | 'register' | 'reset',
+    bucket: 'login' | 'register' | 'reset' | 'stepup',
     max: number,
   ): void {
     const ip = req.ip ?? req.socket?.remoteAddress;
@@ -179,9 +179,13 @@ export class AuthController {
       'Kritik işlem öncesi parola yeniden doğrulama (5 dk geçerli step-up token — FAZ 8)',
   })
   async stepUpToken(
+    @Req() req: Request,
     @CurrentUser() user: RequestUser,
     @Body(new ZodValidationPipe(stepUpRequestSchema)) dto: StepUpRequest,
   ): Promise<StepUpResponse> {
+    // FAZ 10 (bulgu F10-02): step-up bir PAROLA DOĞRULAMA ucudur; brute-force
+    // denemelerine karşı giriş ucuyla aynı kategoride hız sınırına tabidir.
+    this.limit(req, 'stepup', this.env.AUTH_RATE_LIMIT_STEPUP_MAX);
     // Parola hatalıysa auth servisi 401 BAD_CREDENTIALS fırlatır.
     await this.auth.verifyPassword(user.id, dto.password);
     return this.stepUp.issueToken(user.id);

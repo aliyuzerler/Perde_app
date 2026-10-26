@@ -68,7 +68,9 @@ export class MailerService {
       await this.transporter.sendMail({ from: this.env.SMTP_FROM, ...email });
     } else {
       this.writeDevOutbox(record);
-      this.logger.log(`→ ${email.to} | ${email.subject}`);
+      // FAZ 10 (bulgu F10-04): alıcı e-postası PII'dır — logda maskelenir
+      // (kullanıcı@etki alanı → ku***@etki alanı).
+      this.logger.log(`→ ${this.maskEmail(email.to)} | ${email.subject}`);
     }
     return record;
   }
@@ -84,6 +86,14 @@ export class MailerService {
         `Dev outbox dosyasına yazılamadı: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /** PII maskesi: yerel kısmın ilk 2 karakteri + *** (Faz 10). */
+  private maskEmail(to: string): string {
+    const at = to.indexOf('@');
+    if (at <= 0) return '***';
+    const local = to.slice(0, at);
+    return `${local.slice(0, 2)}***${to.slice(at)}`;
   }
 
   // --- Şablonlar ---------------------------------------------------------------

@@ -116,6 +116,9 @@ beforeAll(async () => {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL = TEST_DB_URL;
   process.env.MAIL_OUTBOX_FILE = '/tmp/perdego-mail-faz8.jsonl';
+  // FAZ 10: step-up ucu artık hız sınırlı (AUTH_RATE_LIMIT_STEPUP_MAX, varsayılan 5/dk);
+  // bu spec aynı IP'den 5+ step-up yapar → test ortamında sınır gevşetilir.
+  process.env.AUTH_RATE_LIMIT_STEPUP_MAX = '100';
   const { AppModule } = await import('./app.module.js');
   const { configureApp } = await import('./bootstrap.js');
   const { loadEnv } = await import('./config/env.schema.js');

@@ -1,0 +1,170 @@
+FAZ 10 GÜVENLİK PROBE KOŞUMU — 2026-10-26T11:55:50+00:00
+FAZ 10 güvenlik probe'u — faz A — http://127.0.0.1:3197/api/v1
+
+──── S0 — Ortam ve tohum hesaplar ────
+  PASS A0.1 API ayakta
+  PASS A0.2 admin/editor/viewer girişleri
+  PASS A0.3 kredili bölümler mevcut
+
+──── S1 — Kimlik doğrulama ve RBAC ────
+  PASS A1.1 anonim /credits/wallet → 401
+  PASS A1.2 anonim /admin/dashboard → 401
+  PASS A1.3 USER → /admin/dashboard 403
+  PASS A1.4 EDITOR finansal yazma → reddedilir
+  PASS A1.5 USER kendi rolünü yükseltemez → 403
+  PASS A1.6 step-up yanlış parola → 401
+  PASS A1.7 admin step-up token verir
+  PASS A1.8 yabancı step-up tokenı → 403
+
+──── S2 — Kullanıcılar arası veri izolasyonu ────
+  PASS A2.1 A listesine içerik ekler
+  PASS A2.2 A listesinde içerik var
+  PASS A2.3 B listesinde A içeriği YOK
+  PASS A2.4 A cihaz kaydeder
+  PASS A2.5 B hesabında A tokenı YOK (DB)
+  PASS A2.6 B yalnız kendi oturumunu görür (1)
+  PASS A2.7 B bildirim kuyruğu boş
+  PASS A2.8 B izleme geçmişi boş
+
+──── S3 — Ödeme webhook replay (genel zarf, HMAC) ────
+  PASS A3.1 hatalı imza → 202 SKIPPED (işlenmez)
+  PASS A3.2 kredi webhook 202/PROCESSED
+  PASS A3.3 cüzdan +10
+  PASS A3.4 replay duplicate=true
+  PASS A3.5 replay sonrası bakiye hâlâ 10
+  PASS A3.6 ledger tek PURCHASE kaydı
+
+──── S4 — Eşzamanlı bölüm açma yarışı (tek bakiye, iki istek) ────
+  PASS A4.1 4 kredilik bölüm açılır
+  PASS A4.2 3 kredilik bölüm açılır (bakiye 3)
+  PASS A4.3 yarış: tam bir 2xx + bir 402
+  PASS A4.4 bakiye tam 1 düştü (3→1)
+  PASS A4.5 tek unlock satırı
+  PASS A4.6 cüzdan negatif değil
+
+──── S5 — Yetersiz kredi ────
+  PASS A5.1 bakiyesiz unlock → 402 INSUFFICIENT_CREDITS
+  PASS A5.2 unlock satırı YOK
+
+──── S6 — Geçersiz/süresi dolmuş abonelikle premium erişim ────
+  PASS A6.1 aboneliksiz premium session → 402 NEEDS_SUBSCRIPTION
+  PASS A6.2 SÜRESİ DOLMUŞ ACTIVE abonelik yine 402
+  PASS A6.3 pozitif kontrol: viewer (aktif abone) → oturum açılır
+
+──── S7 — Playback token: imza, süre, iptal ────
+  PASS A7.1 FREE session açılır
+  PASS A7.2 imzalı manifest 200
+  PASS A7.3 bozuk imza → 403 TOKEN_INVALID
+  PASS A7.4 süresi dolmuş token → 403
+  PASS A7.5a oturum satırı bulundu ve iptal edildi
+  PASS A7.5 iptal edilmiş oturum → 403 (anında kesilir)
+
+──── S8 — Hatalı / kötü niyetli istekler ────
+  PASS A8.1 SQLi deseni → 200 (parametrik sorgu, çökmez) ve tablo sağlam
+  PASS A8.2 XSS deseni → 200/400 (çökmez)
+  PASS A8.3 bozuk JSON → 400
+  PASS A8.4 yanlış tipler → 400 VALIDATION_FAILED
+  PASS A8.5 1.2MB gövde reddedilir → 400/413
+  PASS A8.6 path traversal → env sızmaz
+  PASS A8.7 medya yol gezinmesi → 4xx
+  PASS A8.8 bilinmeyen uç → 404 zarfı
+  PASS A8.9 alg=none JWT → 401
+
+──── S9 — Debug / sahte ödeme yüzeyleri ────
+  PASS A9.1 dev simülasyon yalnız test ortamında doğrular (üretimde C-07 throw)
+  PASS A9.2 sağlayıcı yokken RC webhook → 503
+  PASS A9.3 /debug ucu yok (404)
+  PASS A9.4 geliştirme/test ortamında Swagger açık (bilinçli)
+
+──── S10 — Güvenlik başlıkları ────
+  PASS A10.1 X-Content-Type-Options: nosniff
+  PASS A10.2 X-Frame-Options: DENY
+  PASS A10.3 Referrer-Policy: no-referrer
+  PASS A10.4 HSTS test ortamında yok (üretimde var)
+
+──── S13 — Performans (sentetik büyük katalog) ────
+  (sentetik katalog kuruldu: 2000 yapım / 8000 bölüm, 144ms)
+  katalog sayfa 1: ort=5ms max=7ms status=200
+  PASS A13.1 katalog sayfa 1 ort < 300ms
+  katalog derin sayfa 50: ort=6ms max=7ms status=200
+  PASS A13.2 derin sayfa ort < 300ms
+  arama (qa10perf): ort=8ms max=9ms status=200
+  PASS A13.3 arama ort < 300ms
+  devam et (300 satır kullanıcı): ort=6ms max=6ms status=200
+  PASS A13.4 devam et ort < 300ms
+  PASS A13.5 yayın listesi indeks kullanıyor (status,publishedAt DESC)
+  PASS A13.6 sentetik veri temizlendi
+
+──── S14 — QA verisi temizliği (qa10-sec içeriği) ────
+  PASS A14.0 append-only ledger DELETE reddi (BR-04 savunması canlı)
+  PASS A14.1 qa10 güvenlik içeriği kaldırıldı (katalog temiz)
+
+═══ FAZ A SONUCU: 67 PASS / 0 FAIL ═══
+FAZ 10 güvenlik probe'u — faz B — http://127.0.0.1:3196/api/v1
+
+──── B1 — RC webhook Bearer + replay ────
+  PASS B1.1 Bearer yok → 202 SKIPPED (işlenmez)
+  PASS B1.2 yanlış Bearer → 202 SKIPPED (işlenmez)
+  PASS B1.3 INITIAL_PURCHASE → 202 PROCESSED
+  PASS B1.4 abonelik aktif hak veriyor (ACTIVE/TRIALING + entitlement)
+  PASS B1.5 replay duplicate=true
+  PASS B1.6 tek store_transaction satırı
+
+──── B2 — RC kredi paketi + replay + iade ────
+  PASS B2.1 paket webhook → PROCESSED
+  PASS B2.2 cüzdan +10
+  PASS B2.3 replay duplicate=true
+  PASS B2.4 bakiye hâlâ 10
+  PASS B2.5 RC REST erişilemez → fake satın alma 503 fail-closed
+  PASS B2.6 REFUND → PROCESSED
+  PASS B2.7 iade sonrası bakiye 0 (clawback)
+  PASS B2.8 REFUND replay duplicate=true
+  PASS B2.9 çift iade yok — bakiye 0
+
+═══ FAZ B SONUCU: 15 PASS / 0 FAIL ═══
+FAZ 10 güvenlik probe'u — faz C — http://127.0.0.1:3195/api/v1
+
+──── C1 — Giriş koruması (login 5/dk) ────
+  PASS C1.1 ilk doğru giriş 200/201 (bütçe 1/5)
+  PASS C1.2 yanlış parola 2/5 → 401
+  PASS C1.3 yanlış parola 3/5 → 401
+  PASS C1.4 yanlış parola 4/5 → 401
+  PASS C1.5 yanlış parola 5/5 → 401
+  PASS C1.6 6. deneme → 429 RATE_LIMITED
+
+──── C2 — Step-up brute-force sınırı (F10-02 düzeltmesi) ────
+  PASS C2.1 yanlış step-up 1/5 → 401
+  PASS C2.2 yanlış step-up 2/5 → 401
+  PASS C2.3 yanlış step-up 3/5 → 401
+  PASS C2.4 yanlış step-up 4/5 → 401
+  PASS C2.5 yanlış step-up 5/5 → 401
+  PASS C2.6 6. step-up (DOĞRU parola bile) → 429
+
+──── C3 — Kayıt/şifre sıfırlama sınırları ────
+  PASS C3.1 kayıt 1/3 → 201
+  PASS C3.2 kayıt 2/3 → 201
+  PASS C3.3 kayıt 3/3 → 201
+  PASS C3.4 4. kayıt → 429
+  PASS C3.5 reset 1/3 → 200/201
+  PASS C3.6 reset 2/3 → 200/201
+  PASS C3.7 reset 3/3 → 200/201
+  PASS C3.8 4. reset → 429
+
+═══ FAZ C SONUCU: 20 PASS / 0 FAIL ═══
+
+########## Faz D: üretim env savunmaları ##########
+[PASS] C-01-prod-jwt-zorunlu — reddedildi: - JWT_ACCESS_PRIVATE_KEY: PRODUCTION ortamında JWT anahtarları zorunludur (geliştirmede geçici üretilir)
+[PASS] C-02-prod-local-media-reddedilir — reddedildi: - MEDIA_PROVIDER: PRODUCTION ortamında MEDIA_PROVIDER=local seçilemez (docs/MEDIA_SETUP.md — canlı sağlayıcı kurulumuna bakın)
+[PASS] C-03-prod-webhook-sirri-zorunlu — reddedildi: - WEBHOOK_SIGNING_SECRET: PRODUCTION ortamında WEBHOOK_SIGNING_SECRET zorunludur — oynatma/yükleme imza sırrı; DATABASE_URL türetimli fallback yalnız geliştirme
+[PASS] C-04-prod-rc-yarim-yapilandirma — reddedildi: - BILLING_PROVIDER: BILLING_PROVIDER=revenuecat için REVENUECAT_SECRET_API_KEY ve REVENUECAT_WEBHOOK_AUTH_SECRET birlikte zorunludur (docs/BILLING_SETUP.md) | -
+[PASS] C-05-prod-rc-public-sdk-zorunlu — reddedildi: - REVENUECAT_PUBLIC_SDK_KEY: PRODUCTION + BILLING_PROVIDER=revenuecat için REVENUECAT_PUBLIC_SDK_KEY zorunludur (mobil SDK herkese açık anahtar)
+[PASS] C-06-prod-gecerli-yapilandirma — üretim + tam RC yapılandırması kabul edildi
+[PASS] C-07-simule-saglayici-uretimde-kapali — configured=false (true), verifyPurchase throw=true, fetchSubscriberState throw=true (sahte başarı üretilemez)
+
+--- FAZ C SONUÇ: 7 PASS, 0 FAIL ---
+
+########## S12: log maskeleme denetimi ##########
+  S12: PASS — parola/anahtar/gizli değer günlüklerde yok
+
+FAZ 10 KOŞUM SONUÇLARI: A=0 B=0 C=0 D=0 maske=0
+FAZ 10 GÜVENLİK KOŞUMU: TÜMÜ GEÇTİ

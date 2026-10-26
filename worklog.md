@@ -316,3 +316,30 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — kabul kriteri (yetkili oynatır, yetkisiz backend'de kesilir) canlı kanıtla sağlandı; iki YÜKSEK güvenlik kusuru bu fazda düzeltildi ve regresyonla doğrulandı.
 - Dürüst sınırlar: gerçek cihaz (EAS) ve canlı sağlayıcı (Bunny/Mux/CF) doğrulanamadı; Mailpit SMTP yok (outbox transport).
 - Sonraki ajan için: üretim env'ine WEBHOOK_SIGNING_SECRET (openssl rand -hex 32) ekleyin — artık API açılış şartı; UI E2E ilk-yükleme timeout artışı cila; bearer URL sertleştirmesi (cihaz bağlama) sonraki faz önerisi; probe yeniden koşum: bash scripts/qa-faz6-run-probes.sh (61 sn TTL bekleme içerir).
+
+---
+Task ID: 7
+Agent: Ana ajan (Z.ai)
+Task: FAZ 7 — gerçek abonelik ve kredi satın alma altyapısı (RevenueCat değerlendirilmiş sağlayıcı)
+
+Work Log:
+- Mevcut durum incelendi: FAZ 2b iskeleti (simüle doğrulama + genel webhook zarfı + idempotensi) ve FAZ 4 medya port deseni temel alındı; FAZ 1-6 QA raporları docs/qa'da mevcut.
+- packages/contracts: billingConfigResponseSchema (provider/configured/publicSdkKey/ürün kimlikleri), entitlementSync sözleşmeleri, revenueCatWebhookSchema (event zarfı + grace + transfer alanları), validate'e appUserId; 13 yeni sözleşme testi (71/71).
+- API env şeması: BILLING_PROVIDER(none|revenuecat), REVENUECAT_SECRET_API_KEY/WEBHOOK_AUTH_SECRET/PUBLIC_SDK_KEY/API_BASE_URL; üretim refine'ları (yarım RC yapılandırması reddedilir, prod'da public SDK anahtarı zorunlu) — 15 env testi.
+- BillingProviderPort (ARCHITECTURE port deseni): RevenueCatProvider (REST /v1/subscribers ters sorgu, Bearer webhook sırrı timing-safe, SANDBOX/PRODUCTION ortam etiketi, fetchSubjectState senkronu) + SimulatedBillingProvider (yalnız dev/test; prod'da throw; SAHTE BAŞARI YOK). 13+24 birim test.
+- RC webhook yaşam döngüsü: INITIAL_PURCHASE/RENEWAL/PRODUCT_CHANGE/NON_RENEWING_PURCHASE/SUBSCRIPTION_EXTENDED → mağaza ürünü plana/pakete çözümleyip abonelik (RC expiry yetkili) veya kredi ledger; CANCELLATION/UNCANCELLATION/EXPIRATION/BILLING_ISSUE(grace)/SUBSCRIPTION_PAUSED/REFUND/REFUND_REVERSED/TRANSFER/TEST haritalandı; bilinmeyen ürün FAILED (sessiz kayıp yok).
+- SubscriptionsService'e mağaza odaklı yaşam döngüsü: cancelAtPeriodEnd, resumeAutoRenew, markExpired, markBillingIssue, markPaused, markResumed, findPlanByProductId; activateFromPurchase'a periodEndOverride + periodType (TRIAL).
+- validatePurchase: sağlayıcı ters sorgulu doğrulama (Güvenlik-1), appUserId kimlik eşleşmesi 403, prod'da SANDBOX reddi, fail-closed 503; kredi yolu ürün kimliğini paket koduna çözümler.
+- Yeni uçlar: GET /billing/config (anonim), POST /billing/entitlements/sync (mağaza durum eşitleme + kredi geri yükleme), POST /billing/webhooks/revenuecat (Bearer sırrı, 202); genel webhook 202'e sabitlendi.
+- BULGU F7-01 (düzeltildi): RC'nin Authorization: Bearer sırrı global JWT guard'ı ile çakışıyordu (401) — bootstrap'ta yol bazlı middleware başlığı guard'dan önce rcAuthorization'a taşır.
+- BULGU F7-02 (düzeltildi): webhook uçları sözleşmedeki 202 yerine 201 dönüyordu — @HttpCode(202) eklendi.
+- Mobile: react-native-purchases@10.15.1; purchases-port + RC SDK adaptörü (savunmacı alan erişimi, web/Expo Go destek durumu), billing-flow (purchase→validate Idempotency-Key zinciri, restore→sync, resolveBillingState durum makinesi), use-billing-state kancası, paywall/credits ekranları mağaza offerings fiyatlarıyla (Güvenlik-10: istemci fiyat sabitleme yok), BillingNotice dürüst bildirim paneli, PriceCard disabled desteği; mock adapter validate/sync simülasyonu (idempotent).
+- Entegrasyon (gerçek PG): integration.faz7-billing.spec.ts — 8 test (config, RC 503, validate+idempotensi+UNIQUE tx, krediyle bölüm açma regresyonu, HMAC abonelik+yeniden gönderim, imzasız reddi, iade clawback+EXPIRED, webhook_events denetim izi). Tüm eski entegrasyon suitleri (faz2b/2c/3/4) regresyonda yeşil.
+- Canlı probe: dist build + gerçek HTTP — config/products/validate/wallet/RC 503/HMAC webhook/subscription kanıtı (scripts/qa-faz7-live-probe-output.txt, koşum: scripts/qa-faz7-run-probe.sh, probe: apps/api/scripts/qa-faz7-live-probe.cjs).
+- Belgeler: docs/BILLING_SETUP.md (RC kurulum, ortam ayrımı, iade politikası, üretim checklist'i — "ürettime hazır değil" başlığıyla), API_CONTRACT §8 tamamen Faz 7 gerçekliğine göre yazıldı, .env.example (api+mobile) güncellendi.
+
+Stage Summary:
+- Sonuç: 71 contracts + 196 API (61'i gerçek PG entegrasyonu) + 142 mobile test YEŞİL; typecheck+lint tüm workspace'lerde temiz; canlı probe 7 uç doğruladı.
+- Güvenlik gereksinimleri: 1 (istemci beyanına güvenme), 2 (doğrulama+webhook), 3 (benzersiz işlem idempotensi), 4 (imza/kaynak/yeniden gönderim), 5 (ledger tabanlı kredi), 6 (atomik unlock), 7 (iade düzeltmesi), 8 (süresiz satın alınan kredi — expires_at NULL test edildi), 9 (prod'da sahte başarı yok — 503 + simülasyon yasağı), 10 (mağaza fiyatı) karşılandı.
+- Dürüst sınırlar: RC anahtarları/webhook yok (sandbox hesabı yok) → canlı RC ters sorgusu ve gerçek mağaza satın alması doğrulanamadı; RC SDK jest'te native olmadığından cihaz üstü akış EAS derlemesi ister. Bunlar BILLING_SETUP §6 checklist'inde açıkça listeli.
+- Sonraki ajan için: RC sandbox hesabı açılırsa BILLING_SETUP.md §2-6 adımları uygulanıp QA yapılmalı; admin panelinde store_transactions görünümleri Faz 8 adayı; RC v2 API'ye geçiş (refund alanları) izlenebilir.

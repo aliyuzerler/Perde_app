@@ -19,4 +19,7 @@ export const queryKeys = {
   legal: (slug: 'terms' | 'privacy') => ['legal', slug] as const,
   /** Oynatma oturumu — kısa ömürlü imzalı URL'ler (FAZ 4). */
   playbackSession: (episodeId: string) => ['playbackSession', episodeId] as const,
+  /** Ödeme yapılandırması ve mağaza önerileri (FAZ 7). */
+  billingConfig: ['billingConfig'] as const,
+  storeOfferings: ['storeOfferings'] as const,
 };

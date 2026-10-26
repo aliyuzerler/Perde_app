@@ -99,4 +99,83 @@ describe('loadEnv (ortam değişkeni doğrulaması)', () => {
     expect(result.ok).toBe(true);
     expect(result.env?.WEBHOOK_SIGNING_SECRET).toBeUndefined();
   });
+
+  it('BILLING_PROVIDER varsayılanı none (ödeme devrede değil)', () => {
+    const result = loadEnv({ ...baseEnv });
+
+    expect(result.ok).toBe(true);
+    expect(result.env?.BILLING_PROVIDER).toBe('none');
+  });
+
+  it('BILLING_PROVIDER=revenuecat: yarım yapılandırma reddedilir (Güvenlik-9)', () => {
+    const onlySecret = loadEnv({
+      ...baseEnv,
+      BILLING_PROVIDER: 'revenuecat',
+      REVENUECAT_SECRET_API_KEY: 'sk_rc_secret_key_000000000001',
+    });
+    expect(onlySecret.ok).toBe(false);
+    expect(onlySecret.errors?.some((e) => e.includes('REVENUECAT'))).toBe(true);
+
+    const onlyWebhook = loadEnv({
+      ...baseEnv,
+      BILLING_PROVIDER: 'revenuecat',
+      REVENUECAT_WEBHOOK_AUTH_SECRET: 'rc_webhook_secret_00000000001',
+    });
+    expect(onlyWebhook.ok).toBe(false);
+  });
+
+  it('BILLING_PROVIDER=revenuecat: tam yapılandırma geliştirmede kabul edilir', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      BILLING_PROVIDER: 'revenuecat',
+      REVENUECAT_SECRET_API_KEY: 'sk_rc_secret_key_000000000001',
+      REVENUECAT_WEBHOOK_AUTH_SECRET: 'rc_webhook_secret_00000000001',
+      REVENUECAT_PUBLIC_SDK_KEY: 'appl_pubkey_0001',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.env?.BILLING_PROVIDER).toBe('revenuecat');
+  });
+
+  it('PRODUCTION + revenuecat: public SDK anahtarı zorunlu', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+      WEBHOOK_SIGNING_SECRET: 'cok-gizli-uretim-sigorta-anahtari-1234',
+      BILLING_PROVIDER: 'revenuecat',
+      REVENUECAT_SECRET_API_KEY: 'sk_rc_secret_key_000000000001',
+      REVENUECAT_WEBHOOK_AUTH_SECRET: 'rc_webhook_secret_00000000001',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.includes('REVENUECAT_PUBLIC_SDK_KEY'))).toBe(true);
+
+    const withKey = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+      WEBHOOK_SIGNING_SECRET: 'cok-gizli-uretim-sigorta-anahtari-1234',
+      BILLING_PROVIDER: 'revenuecat',
+      REVENUECAT_SECRET_API_KEY: 'sk_rc_secret_key_000000000001',
+      REVENUECAT_WEBHOOK_AUTH_SECRET: 'rc_webhook_secret_00000000001',
+      REVENUECAT_PUBLIC_SDK_KEY: 'appl_pubkey_0001',
+    });
+    expect(withKey.ok).toBe(true);
+  });
+
+  it('PRODUCTION + provider=none: geçerli ama uygulama ödemeyi açıkça bildirir', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+      WEBHOOK_SIGNING_SECRET: 'cok-gizli-uretim-sigorta-anahtari-1234',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.env?.BILLING_PROVIDER).toBe('none');
+  });
 });

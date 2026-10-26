@@ -1,16 +1,31 @@
 /**
- * Paywall — abonelik paketleri (Faz 3: mock satın alma; canlı IAP Faz 5'te).
- * Plan seçimi → mock subscribe → cüzdan durumunu günceller (query invalidate).
- * Gerçek ödeme asla tetiklenmez; ekranda mock uyarısı görünürdür.
+ * Paywall — abonelik paketleri (Faz 7: gerçek mağaza akışı).
+ *
+ * Fiyat kuralları (Güvenlik-10): plan fiyatları istemcide sabitlenmez;
+ * RC offerings'ten gelen mağaza yerelleştirilmiş fiyat metni kullanılır.
+ * Mağaza bağlantısı yokken sunucu /billing/products fiyatları bilgilendirme
+ * amaçlı gösterilir.
+ *
+ * Satın alma akışı: RC purchasePackage → POST /billing/purchases/validate
+ * (Idempotency-Key ile). Mağaza sonucu istemcide asla tek başına kabul
+ * edilmez; doğrulama başarısızsa kullanıcıya dürüst hata gösterilir.
+ * Geri Yükleme: restorePurchases + POST /billing/entitlements/sync.
  */
 import { useMemo, useState } from 'react';
-import { StyleSheet, ScrollView, View, Pressable } from 'react-native';
+import { Platform, StyleSheet, ScrollView, View, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { contentApi } from '@/services/adapter';
+import {
+  createBillingFlow,
+  BillingFlowError,
+} from '@/services/billing/billing-flow';
+import { purchasesPort, type StorePackage } from '@/services/billing/purchases-service';
+import { useBillingState } from '@/hooks/use-billing-state';
+import { useAuthStore } from '@/store/auth-store';
 import { queryKeys } from '@/hooks/queries/query-keys';
 import { ScreenContainer } from '@/components/screen-container';
 import { AppText } from '@/components/ui/app-text';
@@ -18,8 +33,11 @@ import { AppButton } from '@/components/ui/app-button';
 import { PriceCard } from '@/components/ui/price-card';
 import { LoadingView } from '@/components/state-views/loading-view';
 import { ErrorView } from '@/components/state-views/error-view';
+import { BillingNotice } from '@/components/billing/billing-notice';
 import { spacing } from '@/theme/tokens';
 import { formatKurus } from '@/utils/format';
+
+const billingFlow = createBillingFlow({ api: contentApi, purchases: purchasesPort });
 
 export default function PaywallScreen() {
   const { theme } = useTheme();
@@ -29,23 +47,61 @@ export default function PaywallScreen() {
   const fromEpisode = params.from === 'player';
   const queryClient = useQueryClient();
 
+  const billing = useBillingState();
   const plans = useQuery({
     queryKey: queryKeys.plans,
     queryFn: () => contentApi.getSubscriptionPlans(),
   });
-  const wallet = useQuery({
-    queryKey: queryKeys.wallet,
-    queryFn: () => contentApi.getWallet(),
-  });
 
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
+  const [flowError, setFlowError] = useState<string | null>(null);
 
   const subscribe = useMutation({
-    mutationFn: (planId: string) => contentApi.subscribe(planId),
+    mutationFn: async (planId: string) => {
+      const appUserId = useAuthStore.getState().session?.user.id;
+      if (!appUserId) throw new BillingFlowError('NOT_CONFIGURED', t('error.authRequired'));
+      const product = billing.config?.subscriptionProducts.find((p) => p.planId === planId);
+      const productId = product
+        ? /* platforma göre mağaza ürün kimliği */
+          product.productIds.ios
+        : planId;
+      const pkg = findPackageForProduct(billing.offerings, productId);
+      return billingFlow.purchaseAndValidate({
+        pkg,
+        appUserId,
+        productType: 'SUBSCRIPTION',
+      });
+    },
     onSuccess: () => {
       setSubscribed(true);
+      setFlowError(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet });
+    },
+    onError: (error) => {
+      setFlowError(
+        error instanceof BillingFlowError ? error.message : t('billing.flowFailed'),
+      );
+    },
+  });
+
+  const restore = useMutation({
+    mutationFn: () => {
+      const appUserId = useAuthStore.getState().session?.user.id;
+      if (!appUserId) throw new BillingFlowError('NOT_CONFIGURED', t('error.authRequired'));
+      return billingFlow.restoreAndSync({
+        platform: purchasesPlatform(),
+        appUserId,
+      });
+    },
+    onSuccess: () => {
+      setFlowError(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wallet });
+    },
+    onError: (error) => {
+      setFlowError(
+        error instanceof BillingFlowError ? error.message : t('billing.flowFailed'),
+      );
     },
   });
 
@@ -55,6 +111,8 @@ export default function PaywallScreen() {
   );
 
   const activePlanId = selectedPlanId ?? bestPlanId;
+  const purchaseEnabled =
+    billing.state === 'ready' && Boolean(activePlanId) && !subscribe.isPending;
 
   return (
     <ScreenContainer>
@@ -75,6 +133,10 @@ export default function PaywallScreen() {
           {t('paywall.subtitle')}
         </AppText>
 
+        {billing.state === 'unconfigured' || billing.state === 'unsupported-device' ? (
+          <BillingNotice variant={billing.state} />
+        ) : null}
+
         {plans.isPending ? (
           <LoadingView variant="list" />
         ) : plans.isError ? (
@@ -88,32 +150,51 @@ export default function PaywallScreen() {
             <AppText variant="label" color="textSubtle" style={styles.selectLabel}>
               {t('paywall.selectPlan')}
             </AppText>
-            {plans.data.plans.map((plan) => (
-              <PriceCard
-                key={plan.id}
-                title={plan.name}
-                priceText={formatKurus(plan.priceKurus)}
-                subText={
-                  plan.monthlyEquivalentKurus
-                    ? t('paywall.monthlyEquivalent', {
-                        price: formatKurus(plan.monthlyEquivalentKurus),
-                      })
-                    : undefined
-                }
-                badges={[
-                  ...(plan.isBestValue
-                    ? [{ label: t('content.newBadge'), tone: 'accent' as const }]
-                    : []),
-                ]}
-                bullets={plan.benefits}
-                selected={activePlanId === plan.id}
-                onPress={() => setSelectedPlanId(plan.id)}
-              />
-            ))}
+            {plans.data.plans.map((plan) => {
+              const product = billing.config?.subscriptionProducts.find(
+                (p) => p.planId === plan.id
+              );
+              const pkg = product
+                ? findPackageForProduct(
+                    billing.offerings,
+                    purchasesPlatform() === 'ANDROID' ? product.productIds.android : product.productIds.ios
+                  )
+                : null;
+              // Güvenlik-10: fiyat mağazadan; yoksa sunucu bilgilendirme fiyatı.
+              const priceText = pkg?.storePriceText || formatKurus(plan.priceKurus);
+              return (
+                <PriceCard
+                  key={plan.id}
+                  title={plan.name}
+                  priceText={priceText}
+                  subText={
+                    pkg?.introPriceText
+                      ? t('paywall.introPrice', { price: pkg.introPriceText })
+                      : plan.monthlyEquivalentKurus
+                        ? t('paywall.monthlyEquivalent', {
+                            price: formatKurus(plan.monthlyEquivalentKurus),
+                          })
+                        : undefined
+                  }
+                  badges={[
+                    ...(plan.isBestValue
+                      ? [{ label: t('content.newBadge'), tone: 'accent' as const }]
+                      : []),
+                    ...(pkg?.introPriceText
+                      ? [{ label: t('paywall.trialBadge'), tone: 'accent' as const }]
+                      : []),
+                  ]}
+                  bullets={plan.benefits}
+                  selected={activePlanId === plan.id}
+                  onPress={() => setSelectedPlanId(plan.id)}
+                  disabled={billing.state !== 'ready'}
+                />
+              );
+            })}
 
-            {wallet.data?.wallet.subscriptionStatus === 'TRIALING' && !subscribed ? (
-              <AppText variant="caption" color="textSubtle">
-                {t('paywall.trialNote', { count: 7 })}
+            {flowError ? (
+              <AppText variant="caption" style={{ color: theme.colors.warning }}>
+                {flowError}
               </AppText>
             ) : null}
 
@@ -130,26 +211,32 @@ export default function PaywallScreen() {
             ) : (
               <View style={styles.ctaWrap}>
                 <AppButton
-                  label={t('paywall.subscribe')}
+                  label={
+                    subscribe.isPending
+                      ? t('billing.purchasing')
+                      : t('paywall.subscribe')
+                  }
                   onPress={() => {
                     if (activePlanId) subscribe.mutate(activePlanId);
                   }}
-                  disabled={!activePlanId || subscribe.isPending}
+                  disabled={!purchaseEnabled}
                 />
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => router.back()}
+                  accessibilityLabel={t('paywall.restore')}
+                  onPress={() => restore.mutate()}
                   style={styles.restoreButton}
+                  disabled={billing.state !== 'ready' || restore.isPending}
                 >
                   <AppText variant="caption" color="textSubtle">
-                    {t('paywall.restore')}
+                    {restore.isPending ? t('billing.restoring') : t('paywall.restore')}
                   </AppText>
                 </Pressable>
               </View>
             )}
 
             <AppText variant="caption" color="textSubtle" style={styles.notice}>
-              {t('paywall.mockNotice')}
+              {t('paywall.storeNotice')}
               {fromEpisode ? ` • ${t('player.lockedSubscriptionBody')}` : ''}
             </AppText>
           </>
@@ -157,6 +244,23 @@ export default function PaywallScreen() {
       </ScrollView>
     </ScreenContainer>
   );
+}
+
+/** Platforma göre sunduğum paket: abonelikse SUBSCRIPTION tipi tercih edilir. */
+function findPackageForProduct(
+  offerings: ReturnType<typeof useBillingState>['offerings'],
+  productId: string
+): StorePackage | null {
+  for (const offering of offerings) {
+    for (const pkg of offering.packages) {
+      if (pkg.productId === productId) return pkg;
+    }
+  }
+  return null;
+}
+
+function purchasesPlatform(): 'IOS' | 'ANDROID' {
+  return Platform.OS === 'android' ? 'ANDROID' : 'IOS';
 }
 
 const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>

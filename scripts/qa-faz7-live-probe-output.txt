@@ -1,0 +1,125 @@
+
+=== GET /billing/config → 200 ===
+{
+  "ok": true,
+  "data": {
+    "provider": "none",
+    "configured": false,
+    "subscriptionProducts": [
+      {
+        "planId": "SUB_MONTHLY",
+        "billingPeriod": "MONTHLY",
+        "trialDays": 7,
+        "productIds": {
+          "ios": "perdego.sub.monthly",
+          "android": "perdego.sub.monthly"
+        }
+      },
+      {
+        "planId": "SUB_YEARLY",
+        "billingPeriod": "YEARLY",
+        "trialDays": 0,
+        "productIds": {
+          "ios": "perdego.sub.yearly",
+          "android": "perdego.sub.yearly"
+        }
+      }
+    ],
+    "creditPackProducts": [
+      {
+        "packId": "PACK_10",
+        "productIds": {
+          "ios": "perdego.pack.pack_10",
+          "android": "perdego.pack.pack_10"
+        }
+      },
+      {
+        "packId": "PACK_25",
+        "productIds": {
+          "ios": "perdego.pack.pack_25",
+          "android": "perdego.pack.pack_25
+
+=== GET /billing/products → 200 ===
+{
+  "plans": [
+    "SUB_MONTHLY@4990",
+    "SUB_YEARLY@39990"
+  ],
+  "packs": [
+    "PACK_10@2990",
+    "PACK_25@5990",
+    "PACK_60@9990"
+  ]
+}
+
+=== POST /auth/register → 201 (user: cmvomyuq00000ouhp0jap9hw5) ===
+
+=== POST /billing/purchases/validate (CREDIT_PACK) → 201 ===
+{
+  "ok": true,
+  "data": {
+    "storeTransactionId": "probe_tx_1792981628437",
+    "alreadyProcessed": false,
+    "wallet": {
+      "purchased": 10,
+      "granted": 0
+    },
+    "productType": "CREDIT_PACK"
+  }
+}
+
+=== GET /credits/wallet → 200 ===
+{
+  "ok": true,
+  "data": {
+    "wallet": {
+      "userId": "cmvomyuq00000ouhp0jap9hw5",
+      "creditBalance": 10,
+      "purchasedCredits": 10,
+      "grantedCredits": 0,
+      "subscriptionStatus": "NONE",
+      "subscriptionRenewsAt": null
+    }
+  }
+}
+
+=== POST /billing/webhooks/revenuecat (yapılandırılmamış) → 503 ===
+{
+  "ok": false,
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "errors.billingNotConfigured",
+    "details": {
+      "reason": "BILLING_NOT_CONFIGURED"
+    }
+  }
+}
+
+=== POST /billing/webhooks (SUBSCRIPTION_ACTIVATED) → 202 ===
+{
+  "ok": true,
+  "data": {
+    "accepted": true,
+    "duplicate": false,
+    "eventId": "probe-sub-1792981628468",
+    "state": "PROCESSED"
+  }
+}
+
+=== GET /billing/subscription → 200 ===
+{
+  "ok": true,
+  "data": {
+    "status": "TRIALING",
+    "plan": {
+      "id": "SUB_MONTHLY",
+      "name": "Aylık Abonelik",
+      "billingPeriod": "MONTHLY"
+    },
+    "autoRenew": true,
+    "currentPeriodEnd": "2026-11-02T02:27:08.478Z",
+    "entitlement": true
+  }
+}
+
+PROBE TAMAM

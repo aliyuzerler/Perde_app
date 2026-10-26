@@ -73,8 +73,8 @@ export class ApiClient {
     return this.request<TData>('GET', path);
   }
 
-  post<TData>(path: string, body?: unknown): Promise<TData> {
-    return this.request<TData>('POST', path, body);
+  post<TData>(path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<TData> {
+    return this.request<TData>('POST', path, body, false, extraHeaders);
   }
 
   patch<TData>(path: string, body?: unknown): Promise<TData> {
@@ -101,8 +101,9 @@ export class ApiClient {
     path: string,
     body?: unknown,
     retried = false,
+    extraHeaders?: Record<string, string>,
   ): Promise<TData> {
-    const headers: Record<string, string> = { Accept: 'application/json' };
+    const headers: Record<string, string> = { ...(extraHeaders ?? {}) };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
 
     try {
@@ -123,7 +124,7 @@ export class ApiClient {
 
       const ok = await this.refreshOnce();
       if (!ok) throw error;
-      return this.request<TData>(method, path, body, true);
+      return this.request<TData>(method, path, body, true, extraHeaders);
     }
   }
 

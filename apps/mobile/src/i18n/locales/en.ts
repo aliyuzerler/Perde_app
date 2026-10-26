@@ -91,6 +91,18 @@ export const en: TranslationDict = {
     genericBody: 'An unexpected error occurred. Please try again.',
     networkTitle: 'No connection',
     networkBody: 'Check your internet connection and try again.',
+    authRequired: 'Sign in to make purchases',
+  },
+  billing: {
+    notConfiguredTitle: 'Payments are not live yet',
+    notConfiguredBody:
+      'Purchases will open soon. You can browse plans and prices for now — no charge will be made.',
+    unsupportedDeviceTitle: 'Purchases are unavailable on this device',
+    unsupportedDeviceBody:
+      'Store purchases require the PerdeGo App Store / Google Play build (Expo Go and web are not supported).',
+    purchasing: 'Completing purchase…',
+    restoring: 'Restoring…',
+    flowFailed: 'Could not complete the transaction. Contact support if this persists.',
   },
   empty: {
     genericTitle: 'Nothing here yet',
@@ -183,8 +195,10 @@ export const en: TranslationDict = {
     restore: 'Restore Purchases',
     successTitle: 'Subscription active',
     successBody: 'Welcome to PerdeGo Premium!',
-    mockNotice: 'Development mode: no real payment is taken',
+    storeNotice: 'Prices come from the store in your local currency; the subscription auto-renews until canceled in App Store / Google Play settings',
     monthlyEquivalent: 'per month ₺{{price}}',
+    introPrice: 'Start at {{price}}',
+    trialBadge: 'Trial',
   },
   credits: {
     title: 'Credit Wallet',
@@ -192,8 +206,8 @@ export const en: TranslationDict = {
     packsTitle: 'Credit Packs',
     historyTitle: 'Transactions',
     buy: 'Buy',
-    successBody: '{{count}} credits added to your wallet',
-    mockNotice: 'Development mode: no real payment is taken',
+    successBody: '{{count}} credits in your wallet',
+    storeNotice: 'Purchased credits never expire; prices come from the store in your local currency',
     purchasedLabel: 'purchased',
     grantedLabel: 'granted',
   },

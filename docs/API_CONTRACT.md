@@ -255,17 +255,55 @@ kayıtları da görünür):
 | `POST /notifications/{id}/read` · `POST /notifications/read-all` | Okundu işaretleme |
 | `GET /notification-preferences` · `PATCH /notification-preferences` | Tercihler |
 
-## 8. Sunucudan Sunucuya Uçlar (Faz 5)
+## 8. Ödeme Altyapısı ve Sunucudan Sunucuya Uçlar (Faz 7)
+
+Sağlayıcı: **RevenueCat** (StoreKit + Google Play Billing üzerinden yönetilir).
+Sağlayıcı seçimi env'dedir (`BILLING_PROVIDER=none|revenuecat`);
+`none` iken satın alma uçları `503 BILLING_NOT_CONFIGURED` döner — sahte
+başarılı yanıt üretilmez.
+
+### 8.1 İstemci uçları
+
+| Yol | Kimlik | Amaç |
+|-----|--------|------|
+| `GET /billing/config` | anonim | Sağlayıcı durumu + mağaza ürün kimlikleri + RC public SDK anahtarı (gizli anahtar ASLA dönülmez) |
+| `GET /billing/products` | anonim | Planlar + kredi paketleri (bilgilendirme fiyatları; gerçek fiyat mağazadan) |
+| `GET /billing/subscription` | access | Abonelik durumu + entitlement |
+| `POST /billing/purchases/validate` | access + `Idempotency-Key` | Satın alma doğrulaması: RC REST ters sorgusuyla istemci beyanı doğrulanır, `store_transactions` + ledger idempotent işlenir |
+| `POST /billing/entitlements/sync` | access | Mağaza durum eşitleme / geri yükleme: RC subscriber durumu çekilir, abonelik + kredi DB'ye yansıtılır |
+| `GET /billing/purchases` | access | Mağaza işlem geçmişi |
+
+### 8.2 Sunucudan sunucuya (webhook) uçları
 
 | Yol | Kaynak | Doğrulama |
 |-----|--------|-----------|
-| `POST /webhooks/apple` | App Store Server Notifications V2 | JWT zinciri (x5c) imza kontrolü |
-| `POST /webhooks/google` | Play RTDN | Pub/Sub token + Play Developer API sorgusu |
-| `POST /webhooks/revenuecat` | RevenueCat Webhooks | `Authorization` imza header'ı |
+| `POST /billing/webhooks/revenuecat` | RevenueCat Webhooks | `Authorization: Bearer <REVENUECAT_WEBHOOK_AUTH_SECRET>` (timing-safe); ham gövde `webhook_events` (UNIQUE source+event_id) → `202` → idempotent işleme |
+| `POST /billing/webhooks` | genel zarf / ops aktarımı | `X-PerdeGo-Signature: sha256=HMAC(WEBHOOK_SIGNING_SECRET, body)` |
 
-Tümü: ham gövde `webhook_events`'e yazılır → `202 Accepted` derhâl döner →
-BullMQ worker idempotent işler (`UNIQUE(source, event_id)`). Worker,
-mağazaya **ters sorgu** ile olayı teyit eder (sahte webhook savunması).
+İşlenen RC olay tipleri: `INITIAL_PURCHASE`, `RENEWAL`, `PRODUCT_CHANGE`,
+`NON_RENEWING_PURCHASE`, `CANCELLATION` (dönem sonu iptal), `UNCANCELLATION`,
+`EXPIRATION`, `BILLING_ISSUE` (grace → `GRACE_PERIOD`, aksi `ON_HOLD`),
+`SUBSCRIPTION_PAUSED`, `SUBSCRIPTION_EXTENDED`, `REFUND` / `PURCHASE_REFUNDED`
+(kredide REFUND ledger clawback, abonelikte EXPIRED), `REFUND_REVERSED`
+(abonelik hakkı geri açılır), `TRANSFER` (satın alma ailesi yeni kullanıcıya
+taşınır), `TEST`. Bilinmeyen tipler kayda geçer, hataya düşmez.
+
+Not: RevenueCat varsayılan olarak iade webhook'u stream etmez; iade sinyali
+(Apple REFUND / Google voided purchase aktarımı ya da ops olayı) genel zarfla
+veya `REFUND` tipiyle kabul edilir. Yeniden gönderim güvenli: çift olay
+`duplicate=true, state=SKIPPED`.
+
+### 8.3 Doğrulama kuralları (özet)
+
+1. İstemcinin bildirdiği satın alma sonucuna tek başına güvenilmez —
+   `revenuecat` sağlayıcısında sunucu RC subscriber API'siyle ters sorgu yapar.
+2. Üretimde sandbox satın alma (`environment=SANDBOX`) reddedilir
+   (`SANDBOX_PURCHASE_REJECTED`).
+3. Kredi bakiyesi doğrudan artırılmaz; doğrulanmış `store_transactions`
+   kaydı + `credit_ledger` PURCHASE satırı oluşur (satın alınan kredi
+   `expires_at = NULL` — süresiz bakiye politikası).
+4. Kredi harcama + bölüm açma tek transaction, cüzdan satırı `FOR UPDATE`.
+5. Webhook `event.id` UNIQUE ile çift olay idempotent işlenir.
 
 ## 9. Admin Uçları (Faz 6, özet)
 

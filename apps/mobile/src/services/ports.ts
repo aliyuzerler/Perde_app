@@ -15,9 +15,12 @@ import type {
   AccountDeletionResponse,
   AuthSession,
   AuthSessionListResponse,
+  BillingConfigResponse,
   CategoryDetailResponse,
   CategoryListResponse,
   CreditPacksResponse,
+  EntitlementSyncRequest,
+  EntitlementSyncResponse,
   EpisodeDetailResponse,
   FavoritesListResponse,
   FavoriteMutationResponse,
@@ -27,6 +30,8 @@ import type {
   PlaybackSession,
   PlansResponse,
   PublicUserProfile,
+  PurchaseValidate,
+  PurchaseValidateResponse,
   RegisterRequest,
   SearchParams,
   SearchResponse,
@@ -94,19 +99,25 @@ export interface ContentApiPort {
    */
   createPlaybackSession(episodeId: string): Promise<PlaybackSession>;
 
-  // ---------- Abonelik ve kredi (mock; gerçek ödeme Faz 5) ----------
-  /** Abonelik planları (paywall). */
+  // ---------- Abonelik ve kredi (Faz 7: gerçek mağaza akışı) ----------
+  /** Abonelik planları (paywall bilgilendirme — fiyatlar mağazadan da gelir). */
   getSubscriptionPlans(): Promise<PlansResponse>;
   /** Kredi paketleri (kredi mağazası). */
   getCreditPacks(): Promise<CreditPacksResponse>;
+  /** Ödeme sağlayıcı durumu + mağaza ürün kimlikleri. */
+  getBillingConfig(): Promise<BillingConfigResponse>;
   /** Cüzdan bakiyesi ve abonelik durumu. */
   getWallet(): Promise<WalletResponse>;
   /** Cüzdan hareket geçmişi. */
   getWalletTransactions(): Promise<WalletTransactionsResponse>;
-  /** Kredi paketi satın alır (mock — canlı ödeme akışı Faz 5'te). */
-  purchaseCredits(packId: string): Promise<WalletResponse>;
-  /** Plan seçimi (mock — mağaza/iap Faz 5'te). */
-  subscribe(planId: string): Promise<WalletResponse>;
+  /**
+   * Mağaza satın almasını sunucuda doğrular (RevenueCat ters sorgulu).
+   * idempotencyKey: BR-06 — aynı satın alma tekrarında çift işleme yok.
+   * Sunucu doğrulaması geçemeyen satın alma hak vermez (Güvenlik-1).
+   */
+  validatePurchase(input: PurchaseValidate & { idempotencyKey: string }): Promise<PurchaseValidateResponse>;
+  /** Mağaza durumu eşitleme / geri yükleme (abonelik + kredi). */
+  syncEntitlements(input: EntitlementSyncRequest): Promise<EntitlementSyncResponse>;
 
   // ---------- Hesap (Faz 3b: gerçek uçlar + mock eşdeğerleri) ----------
   /** E-posta + parola ile giriş. Doğrulanmamış e-postada 403 EMAIL_NOT_VERIFIED. */

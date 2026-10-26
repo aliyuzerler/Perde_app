@@ -88,6 +88,18 @@ export const tr = {
     genericBody: 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.',
     networkTitle: 'Bağlantı sağlanamadı',
     networkBody: 'İnternet bağlantını kontrol et ve tekrar dene.',
+    authRequired: 'Satın alma için giriş yapmalısın',
+  },
+  billing: {
+    notConfiguredTitle: 'Ödeme henüz devrede değil',
+    notConfiguredBody:
+      'Satın alımlar yakında açılacak. Planları ve fiyatları şimdilik inceleyebilirsin — ücret tahsil edilmez.',
+    unsupportedDeviceTitle: 'Bu cihazda satın alma yapılamıyor',
+    unsupportedDeviceBody:
+      'Mağaza satın alması için PerdeGo uygulamasının App Store / Google Play derlemesi gerekir (Expo Go ve web desteklenmez).',
+    purchasing: 'Satın alma tamamlanıyor…',
+    restoring: 'Geri yükleniyor…',
+    flowFailed: 'İşlem tamamlanamadı. Sorun sürerse desteğe yazın.',
   },
   empty: {
     genericTitle: 'Burada henüz bir şey yok',
@@ -180,8 +192,10 @@ export const tr = {
     restore: 'Satın Almaları Geri Yükle',
     successTitle: 'Abonelik etkin',
     successBody: 'PerdeGo Premium’a hoş geldin!',
-    mockNotice: 'Geliştirme modu: gerçek ödeme alınmaz',
+    storeNotice: 'Fiyatlar mağazadan yerel para birimiyle gelir; abonelik dönem sonuna kadar otomatik yenilenir, App Store / Google Play ayarlarından iptal edilebilir',
     monthlyEquivalent: 'aylık ₺{{price}}',
+    introPrice: '{{price}} ile başla',
+    trialBadge: 'Deneme',
   },
   credits: {
     title: 'Kredi Cüzdanı',
@@ -189,8 +203,8 @@ export const tr = {
     packsTitle: 'Kredi Paketleri',
     historyTitle: 'Hareketler',
     buy: 'Satın Al',
-    successBody: '{{count}} kredi cüzdanına eklendi',
-    mockNotice: 'Geliştirme modu: gerçek ödeme alınmaz',
+    successBody: '{{count}} kredi cüzdanında',
+    storeNotice: 'Satın alınan kredilerin süresi dolmaz; fiyatlar mağazadan yerel para birimiyle gelir',
     purchasedLabel: 'satın alınan',
     grantedLabel: 'hediye',
   },

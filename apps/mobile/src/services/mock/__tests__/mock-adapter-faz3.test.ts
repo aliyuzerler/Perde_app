@@ -47,32 +47,59 @@ describe('Faz 3 mock adapter', () => {
     );
   });
 
-  it('kredi satın alma bakiyeyi artırır ve hareket işler', async () => {
+  it('doğrulanmış kredi paketi satın alma bakiyeyi artırır ve hareket işler', async () => {
     const adapter = createMockAdapter();
     const before = await adapter.getWallet();
     const beforeBalance = before.wallet.creditBalance;
     const beforeTx = mockTransactionLog.length;
 
-    const after = await adapter.purchaseCredits('pack_60');
-    expect(after.wallet.creditBalance).toBe(beforeBalance + 60);
-    expect(mockWalletState.purchasedCredits).toBeGreaterThan(
-      before.wallet.purchasedCredits
-    );
+    const after = await adapter.validatePurchase({
+      platform: 'IOS',
+      productType: 'CREDIT_PACK',
+      productId: 'perdego.pack.pack_60',
+      storeTransactionId: 'mock_tx_pack60',
+      appUserId: 'u_mock',
+      idempotencyKey: 'idem-mock-pack-60',
+    });
+    expect(after.alreadyProcessed).toBe(false);
+    expect(after.productType).toBe('CREDIT_PACK');
+    expect(after.wallet?.purchased).toBeGreaterThan(before.wallet.purchasedCredits);
+    expect(mockWalletState.creditBalance).toBe(beforeBalance + 60);
     expect(mockTransactionLog.length).toBe(beforeTx + 1);
   });
 
-  it('bilinmeyen pakette 404 benzeri hata verir', async () => {
+  it('aynı işlem kimliği ikinci kez gelirse alreadyProcessed döner (idempotent)', async () => {
     const adapter = createMockAdapter();
-    await expect(adapter.purchaseCredits('yok_boyle_paket')).rejects.toThrow(
-      'NOT_FOUND'
-    );
+    const body = {
+      platform: 'IOS' as const,
+      productType: 'CREDIT_PACK' as const,
+      productId: 'perdego.pack.pack_60',
+      storeTransactionId: 'mock_tx_dup',
+      appUserId: 'u_mock',
+      idempotencyKey: 'idem-mock-dup',
+    };
+    const before = mockWalletState.creditBalance;
+    const first = await adapter.validatePurchase(body);
+    expect(first.alreadyProcessed).toBe(false);
+    const second = await adapter.validatePurchase(body);
+    expect(second.alreadyProcessed).toBe(true);
+    // Çift işleme yok: bakiye yalnızca bir kez arttı.
+    expect(mockWalletState.creditBalance).toBe(before + 60);
   });
 
-  it('subscribe abonelik durumunu ACTIVE yapar', async () => {
+  it('abonelik satın alma doğrulaması durumu ACTIVE yapar', async () => {
     const adapter = createMockAdapter();
-    const result = await adapter.subscribe('plan_yearly');
-    expect(result.wallet.subscriptionStatus).toBe('ACTIVE');
-    expect(result.wallet.subscriptionRenewsAt).toBeTruthy();
+    const result = await adapter.validatePurchase({
+      platform: 'ANDROID',
+      productType: 'SUBSCRIPTION',
+      productId: 'perdego.sub.plan_yearly',
+      storeTransactionId: 'mock_tx_sub',
+      appUserId: 'u_mock',
+      idempotencyKey: 'idem-mock-sub',
+    });
+    expect(result.productType).toBe('SUBSCRIPTION');
+    expect(result.subscription?.status).toBe('ACTIVE');
+    expect(result.subscription?.currentPeriodEnd).toBeTruthy();
   });
 
   // ---------------- Faz 3b: oturum + e-posta doğrulama ----------------

@@ -15,6 +15,8 @@ export interface PriceCardProps {
   badges?: { label: string; tone?: 'accent' | 'neutral' | 'outline' }[];
   bullets?: string[];
   selected?: boolean;
+  /** Etkisiz kart (örn. ödeme yapılandırılmamış) — dokunma almayı durdurur. */
+  disabled?: boolean;
   onPress?: () => void;
 }
 
@@ -25,6 +27,7 @@ export function PriceCard({
   badges,
   bullets,
   selected,
+  disabled,
   onPress,
 }: PriceCardProps) {
   const { theme } = useTheme();
@@ -32,11 +35,12 @@ export function PriceCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: !!selected }}
-      onPress={onPress}
+      accessibilityState={{ selected: !!selected, disabled: !!disabled }}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       style={[
         styles.card,
-        { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+        { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, opacity: disabled ? 0.6 : 1 },
         selected && { borderColor: theme.colors.accent },
       ]}
     >

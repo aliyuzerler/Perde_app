@@ -1,5 +1,5 @@
 /**
- * HTTP adapter — gerçek sunucu istemcisi (Faz 2c: katalog uçları devrede).
+ * HTTP adapter — gerçek sunucu istemcisi (Faz 7: mağaza satın alma akışı devrede).
  *
  * Katalog uçları gerçek API'ye bağlanır:
  *   /home · /catalog/titles · /catalog/titles/:slug · /catalog/episodes/:id
@@ -7,13 +7,20 @@
  * Favoriler (/watchlist) ve izleme ilerlemesi (/watch-progress) oturum
  * gerektirir; access token ApiClient tarafından başlığa eklenir.
  *
- * Kredi/abonelik satın alma uçları sunucu mağaza entegrasyonu (Faz 5)
- * öncesinde dürüstçe hata verir (sahte başarılı yanıt üretmez).
+ * Satın alma akışı (Faz 7): satın alma RC SDK ile yapılır; bu adapter yalnızca
+ * SUNUCU DOĞRULAMAsı uçlarını çağırır:
+ *   POST /billing/purchases/validate  (Idempotency-Key zorunlu — BR-06)
+ *   POST /billing/entitlements/sync   (mağaza durum eşitleme / geri yükleme)
+ *   GET  /billing/config              (sağlayıcı durumu + ürün kimlikleri)
+ * İstemcinin sunucu doğrulaması olmadan hak yazdığı YOL YOKTUR.
  */
 import type {
   AccountDeletionResponse,
   AuthSession,
   AuthSessionListResponse,
+  BillingConfigResponse,
+  EntitlementSyncRequest,
+  EntitlementSyncResponse,
   EpisodeDetailResponse,
   FavoritesListResponse,
   FavoriteMutationResponse,
@@ -22,6 +29,8 @@ import type {
   PlaybackSession,
   PlansResponse,
   PublicUserProfile,
+  PurchaseValidate,
+  PurchaseValidateResponse,
   RegisterRequest,
   SearchParams,
   SearchResponse,
@@ -34,16 +43,8 @@ import type {
   WalletResponse,
   WalletTransactionsResponse,
 } from '@perdego/contracts';
-import { ApiClient, ApiClientError } from './api-client';
+import { ApiClient } from './api-client';
 import type { ContentApiPort, CategoryContentPage } from './ports';
-
-function notYetImplemented(faz: string): ApiClientError {
-  return new ApiClientError(
-    'server',
-    `Bu uç henüz sunucuda devreye alınmadı (${faz}).`,
-    'SERVICE_UNAVAILABLE'
-  );
-}
 
 function toQueryString(entries: Record<string, string | number | undefined>): string {
   const params = new URLSearchParams();
@@ -51,6 +52,11 @@ function toQueryString(entries: Record<string, string | number | undefined>): st
     if (value !== undefined && value !== '') params.set(key, String(value));
   }
   return params.toString();
+}
+
+/** Idempotency-Key: sunucu BR-06 kuralı (min 8 karakter). */
+function idempotencyHeaders(key: string): Record<string, string> {
+  return { 'Idempotency-Key': key };
 }
 
 export function createHttpAdapter(client: ApiClient): ContentApiPort {
@@ -145,24 +151,36 @@ export function createHttpAdapter(client: ApiClient): ContentApiPort {
       );
     },
 
-    // ---------------- Abonelik ve kredi (Faz 5 sunucu) ----------------
-    getSubscriptionPlans(): Promise<PlansResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    // ---------------- Abonelik ve kredi (Faz 7: gerçek uçlar) ----------------
+    async getSubscriptionPlans(): Promise<PlansResponse> {
+      const products = await client.get<PlansResponse & CreditPacksResponse>('/billing/products');
+      return { plans: products.plans };
     },
-    getCreditPacks(): Promise<CreditPacksResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    async getCreditPacks(): Promise<CreditPacksResponse> {
+      const products = await client.get<PlansResponse & CreditPacksResponse>('/billing/products');
+      return { packs: products.packs };
     },
-    getWallet(): Promise<WalletResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    async getBillingConfig(): Promise<BillingConfigResponse> {
+      return client.get<BillingConfigResponse>('/billing/config');
     },
-    getWalletTransactions(): Promise<WalletTransactionsResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    async getWallet(): Promise<WalletResponse> {
+      return client.get<WalletResponse>('/credits/wallet');
     },
-    purchaseCredits(): Promise<WalletResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    async getWalletTransactions(): Promise<WalletTransactionsResponse> {
+      return client.get<WalletTransactionsResponse>('/credits/transactions');
     },
-    subscribe(): Promise<WalletResponse> {
-      return Promise.reject(notYetImplemented('Faz 5'));
+    async validatePurchase(
+      input: PurchaseValidate & { idempotencyKey: string },
+    ): Promise<PurchaseValidateResponse> {
+      const { idempotencyKey, ...body } = input;
+      return client.post<PurchaseValidateResponse>(
+        '/billing/purchases/validate',
+        body,
+        idempotencyHeaders(idempotencyKey),
+      );
+    },
+    async syncEntitlements(input: EntitlementSyncRequest): Promise<EntitlementSyncResponse> {
+      return client.post<EntitlementSyncResponse>('/billing/entitlements/sync', input);
     },
 
     // ---------------- Hesap (Faz 3b sunucu) ----------------

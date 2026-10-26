@@ -97,6 +97,20 @@ export const envSchema = z
      * ile doğrulanır; tanımsızsa yalnızca development/test'te kabul edilir. */
     WEBHOOK_SIGNING_SECRET: z.string().min(16).max(256).optional(),
 
+    // --- Faz 7: gerçek ödeme sağlayıcı (RevenueCat) ------------------------------
+    /** none → ödeme devrede değil; uçlar anlaşılır 503 BILLING_NOT_CONFIGURED
+     * döner (sahte başarılı yanıt YOK). revenuecat → mağaza doğrulamaları RC
+     * REST API'siyle ters sorgulanır, webhook'lar Bearer sır ile kabul edilir. */
+    BILLING_PROVIDER: z.enum(['none', 'revenuecat']).default('none'),
+    /** RC gizli API anahtarı (secret) — yalnızca sunucuda; asla istemciye verilmez. */
+    REVENUECAT_SECRET_API_KEY: z.string().min(16).max(256).optional(),
+    /** RC webhook Authorization: Bearer sırrı — RC panelden ayarlanır. */
+    REVENUECAT_WEBHOOK_AUTH_SECRET: z.string().min(16).max(256).optional(),
+    /** RC SDK'nın istemciye verilir herkese açık anahtarı (Apple/Google API key). */
+    REVENUECAT_PUBLIC_SDK_KEY: z.string().min(8).max(256).optional(),
+    /** RC REST API kökü (testler için geçersiz kılınabilir). */
+    REVENUECAT_API_BASE_URL: z.string().url().default('https://api.revenuecat.com'),
+
     // --- Faz 3b: e-posta (Mailpit vb.) --------------------------------------------
     /** Tanımlıysa SMTP (örn. Mailpit: localhost:1025); tanımsızsa geliştirme
      * transport'u e-postaları dosyaya + konsola yazar (MAIL_OUTBOX_FILE). */
@@ -157,6 +171,29 @@ export const envSchema = z
         'PRODUCTION ortamında WEBHOOK_SIGNING_SECRET zorunludur — oynatma/yükleme imza sırrı; DATABASE_URL türetimli fallback yalnız geliştirme içindir (FAZ 6 bulgusu F6-01)',
       path: ['WEBHOOK_SIGNING_SECRET'],
     },
+  )
+  .refine(
+    (env) =>
+      // RC yapılandırması yarım bırakılamaz: secret + webhook sırrı birlikte.
+      env.BILLING_PROVIDER !== 'revenuecat' ||
+      Boolean(env.REVENUECAT_SECRET_API_KEY && env.REVENUECAT_WEBHOOK_AUTH_SECRET),
+    {
+      message:
+        'BILLING_PROVIDER=revenuecat için REVENUECAT_SECRET_API_KEY ve REVENUECAT_WEBHOOK_AUTH_SECRET birlikte zorunludur (docs/BILLING_SETUP.md)',
+      path: ['BILLING_PROVIDER'],
+    },
+  )
+  .refine(
+    (env) =>
+      // Üretimde RC aktifse public SDK anahtarı da yapılandırılmış olmalı;
+      // aksi halde mobil istemci SDK'yı kuramaz (Güvenlik-9: yarım yapılandırma yok).
+      !(env.NODE_ENV === 'production' && env.BILLING_PROVIDER === 'revenuecat') ||
+      Boolean(env.REVENUECAT_PUBLIC_SDK_KEY),
+    {
+      message:
+        'PRODUCTION + BILLING_PROVIDER=revenuecat için REVENUECAT_PUBLIC_SDK_KEY zorunludur (mobil SDK herkese açık anahtar)',
+      path: ['REVENUECAT_PUBLIC_SDK_KEY'],
+    },
   );
 
 export type Env = z.infer<typeof envSchema>;
@@ -190,6 +227,11 @@ export function loadEnv(source: NodeJS.ProcessEnv): EnvLoadResult {
     MEDIA_PROCESSING_DELAY_MS: source.MEDIA_PROCESSING_DELAY_MS,
     IDEMPOTENCY_TTL_HOURS: source.IDEMPOTENCY_TTL_HOURS,
     WEBHOOK_SIGNING_SECRET: source.WEBHOOK_SIGNING_SECRET || undefined,
+    BILLING_PROVIDER: source.BILLING_PROVIDER,
+    REVENUECAT_SECRET_API_KEY: source.REVENUECAT_SECRET_API_KEY || undefined,
+    REVENUECAT_WEBHOOK_AUTH_SECRET: source.REVENUECAT_WEBHOOK_AUTH_SECRET || undefined,
+    REVENUECAT_PUBLIC_SDK_KEY: source.REVENUECAT_PUBLIC_SDK_KEY || undefined,
+    REVENUECAT_API_BASE_URL: source.REVENUECAT_API_BASE_URL,
     SMTP_HOST: source.SMTP_HOST || undefined,
     SMTP_PORT: source.SMTP_PORT,
     SMTP_FROM: source.SMTP_FROM,

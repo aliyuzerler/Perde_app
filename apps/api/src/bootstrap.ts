@@ -26,6 +26,21 @@ export function configureApp(app: INestApplication, env: Env): void {
     }),
   );
 
+  // RevenueCat webhook'u (Faz 7): RC, kendi webhook sırrını `Authorization:
+  // Bearer <secret>` başlığıyla gönderir. Bu başlık global JWT guard'ının
+  // token çözümlemesiyle ÇAKIŞIR (geçersiz JWT → 401). Bu yol için başlığı
+  // guard'dan önce kenara alır ve `rc-authorization` alanına taşır; kontrolcü
+  // sağlayıcı doğrulamasını bu değerle yapar (Güvenlik-4).
+  app.use('/api/v1/billing/webhooks/revenuecat', (req: unknown, _res: unknown, next: () => void) => {
+    const request = req as { headers: Record<string, string | string[] | undefined> };
+    const auth = request.headers.authorization;
+    if (typeof auth === 'string' && auth.length > 0) {
+      (req as unknown as { rcAuthorization?: string }).rcAuthorization = auth;
+      delete request.headers.authorization;
+    }
+    next();
+  });
+
   // Sürümükleme: sürümlü uçlar /api/v1 altında; altyapı uçları ve görseller kökte.
   app.setGlobalPrefix('api/v1', {
     exclude: ['health', 'health/db', 'placeholders/(.*)' as never],

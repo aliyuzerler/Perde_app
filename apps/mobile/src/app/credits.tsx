@@ -1,23 +1,37 @@
 /**
- * Kredi mağazası ve cüzdan (Faz 3: mock; gerçek ödeme Faz 5'te).
- * Bakiye kartı (purchased/granted kırılımı), kredi paketleri ve hareketler.
+ * Kredi mağazası ve cüzdan (Faz 7: gerçek mağaza akışı).
+ *
+ * - Bakiye ve hareket geçmişi sunucudan (credit_ledger salt okunur).
+ * - Paket satın alma RC SDK ile yapılır; fiyat mağazadan gelir
+ *   (Güvenlik-10), sunucu /billing/products fiyatı bilgilendirme amaçlıdır.
+ * - Mağaza sonucu istemcide kabul edilmez: purchase → POST validate
+ *   (Idempotency-Key) zinciri zorunludur; doğrulama hatasında dürüst mesaj.
+ * - Yapılandırılmamış ödeme / desteklenmeyen cihazda satın alma devre dışı
+ *   ve nedeni kullanıcıya açıkça bildirilir (Güvenlik-9).
  */
 import { useState } from 'react';
-import { StyleSheet, ScrollView, View, Pressable } from 'react-native';
+import { Platform, StyleSheet, ScrollView, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '@/theme';
 import { useT } from '@/i18n';
 import { contentApi } from '@/services/adapter';
+import { createBillingFlow, BillingFlowError } from '@/services/billing/billing-flow';
+import { purchasesPort, type StorePackage } from '@/services/billing/purchases-service';
+import { useBillingState } from '@/hooks/use-billing-state';
+import { useAuthStore } from '@/store/auth-store';
 import { queryKeys } from '@/hooks/queries/query-keys';
 import { ScreenContainer } from '@/components/screen-container';
 import { AppText } from '@/components/ui/app-text';
 import { PriceCard } from '@/components/ui/price-card';
 import { LoadingView } from '@/components/state-views/loading-view';
 import { ErrorView } from '@/components/state-views/error-view';
+import { BillingNotice } from '@/components/billing/billing-notice';
 import { spacing } from '@/theme/tokens';
 import { formatKurus } from '@/utils/format';
+
+const billingFlow = createBillingFlow({ api: contentApi, purchases: purchasesPort });
 
 export default function CreditsScreen() {
   const { theme } = useTheme();
@@ -25,7 +39,9 @@ export default function CreditsScreen() {
   const styles = getStyles(theme.colors);
   const queryClient = useQueryClient();
   const [lastPurchased, setLastPurchased] = useState<number | null>(null);
+  const [flowError, setFlowError] = useState<string | null>(null);
 
+  const billing = useBillingState();
   const wallet = useQuery({
     queryKey: queryKeys.wallet,
     queryFn: () => contentApi.getWallet(),
@@ -40,11 +56,32 @@ export default function CreditsScreen() {
   });
 
   const purchase = useMutation({
-    mutationFn: (packId: string) => contentApi.purchaseCredits(packId),
+    mutationFn: async (packId: string) => {
+      const appUserId = useAuthStore.getState().session?.user.id;
+      if (!appUserId) throw new BillingFlowError('NOT_CONFIGURED', t('error.authRequired'));
+      const product = billing.config?.creditPackProducts.find((p) => p.packId === packId);
+      const productId = product
+        ? purchasesPlatform() === 'ANDROID'
+          ? product.productIds.android
+          : product.productIds.ios
+        : packId;
+      const pkg = findPackageForProduct(billing.offerings, productId);
+      return billingFlow.purchaseAndValidate({
+        pkg,
+        appUserId,
+        productType: 'CREDIT_PACK',
+      });
+    },
     onSuccess: (result) => {
-      setLastPurchased(result.wallet.creditBalance);
+      setFlowError(null);
+      setLastPurchased(result.validation.wallet?.purchased ?? null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.wallet });
       void queryClient.invalidateQueries({ queryKey: queryKeys.walletTransactions });
+    },
+    onError: (error) => {
+      setFlowError(
+        error instanceof BillingFlowError ? error.message : t('billing.flowFailed'),
+      );
     },
   });
 
@@ -83,6 +120,16 @@ export default function CreditsScreen() {
           ) : null}
         </View>
 
+        {/* Ödeme durumu — dürüst bildirim (sahte başarı yok) */}
+        {billing.state === 'unconfigured' || billing.state === 'unsupported-device' ? (
+          <BillingNotice variant={billing.state} />
+        ) : null}
+        {flowError ? (
+          <AppText variant="caption" style={{ color: theme.colors.warning }}>
+            {flowError}
+          </AppText>
+        ) : null}
+
         {/* Paketler */}
         <AppText variant="heading">{t('credits.packsTitle')}</AppText>
         {packs.isPending ? (
@@ -94,24 +141,39 @@ export default function CreditsScreen() {
             onRetry={() => packs.refetch()}
           />
         ) : (
-          packs.data.packs.map((pack) => (
-            <PriceCard
-              key={pack.id}
-              title={`${pack.credits} Kredi`}
-              priceText={formatKurus(pack.priceKurus)}
-              subText={
-                pack.bonusCredits > 0
-                  ? `+${pack.bonusCredits} bonus kredi`
-                  : undefined
-              }
-              badges={
-                pack.isBestValue
-                  ? [{ label: t('content.newBadge'), tone: 'accent' as const }]
-                  : undefined
-              }
-              onPress={() => purchase.mutate(pack.id)}
-            />
-          ))
+          packs.data.packs.map((pack) => {
+            const product = billing.config?.creditPackProducts.find(
+              (p) => p.packId === pack.id
+            );
+            const pkg = product
+              ? findPackageForProduct(
+                  billing.offerings,
+                  purchasesPlatform() === 'ANDROID'
+                    ? product.productIds.android
+                    : product.productIds.ios
+                )
+              : null;
+            const priceText = pkg?.storePriceText || formatKurus(pack.priceKurus);
+            return (
+              <PriceCard
+                key={pack.id}
+                title={`${pack.credits} Kredi`}
+                priceText={priceText}
+                subText={
+                  pack.bonusCredits > 0
+                    ? `+${pack.bonusCredits} bonus kredi`
+                    : undefined
+                }
+                badges={
+                  pack.isBestValue
+                    ? [{ label: t('content.newBadge'), tone: 'accent' as const }]
+                    : undefined
+                }
+                onPress={() => purchase.mutate(pack.id)}
+                disabled={billing.state !== 'ready' || purchase.isPending}
+              />
+            );
+          })
         )}
 
         {/* Hareketler */}
@@ -151,11 +213,28 @@ export default function CreditsScreen() {
         )}
 
         <AppText variant="caption" color="textSubtle" style={styles.notice}>
-          {t('credits.mockNotice')}
+          {t('credits.storeNotice')}
         </AppText>
       </ScrollView>
     </ScreenContainer>
   );
+}
+
+/** Platforma göre sunduğum paket. */
+function findPackageForProduct(
+  offerings: ReturnType<typeof useBillingState>['offerings'],
+  productId: string
+): StorePackage | null {
+  for (const offering of offerings) {
+    for (const pkg of offering.packages) {
+      if (pkg.productId === productId) return pkg;
+    }
+  }
+  return null;
+}
+
+function purchasesPlatform(): 'IOS' | 'ANDROID' {
+  return Platform.OS === 'android' ? 'ANDROID' : 'IOS';
 }
 
 const getStyles = (colors: ReturnType<typeof useTheme>['theme']['colors']) =>

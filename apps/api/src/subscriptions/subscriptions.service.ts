@@ -99,6 +99,10 @@ export class SubscriptionsService {
     priceKurus?: number;
     currency?: string;
     purchaseToken?: string;
+    /** RC expiration_at_ms — mağaza dönem bitişi (yetkili kaynak). */
+    periodEndOverride?: Date;
+    /** RC period_type — deneme/kampanya dönemleri TRIAL yazar. */
+    periodType?: 'NORMAL' | 'TRIAL' | 'INTRO';
     tx?: Prisma.TransactionClient;
   }): Promise<{ storeTransactionId: string; alreadyProcessed: boolean; status: string; currentPeriodEnd: string | null }> {
     const run = async (tx: Prisma.TransactionClient) => {
@@ -151,19 +155,23 @@ export class SubscriptionsService {
       });
 
       const now = new Date();
-      const periodEnd = new Date(
-        plan.billingPeriod === 'YEARLY' ? now.getTime() + 365 * 86400_000 : now.getTime() + 30 * 86400_000,
-      );
+      const storePeriodEnd =
+        args.periodEndOverride ??
+        new Date(
+          plan.billingPeriod === 'YEARLY' ? now.getTime() + 365 * 86400_000 : now.getTime() + 30 * 86400_000,
+        );
+      const isTrialPeriod = args.periodType === 'TRIAL' || args.periodType === 'INTRO';
 
       let status: 'TRIALING' | 'ACTIVE';
-      let effectiveEnd = periodEnd;
+      let effectiveEnd = storePeriodEnd;
       if (openSub && openSub.currentPeriodEnd && openSub.currentPeriodEnd > now) {
         // Uzatma: mevcut dönem bitişinden sonra bir dönem ekle.
-        effectiveEnd = new Date(
+        // RC expiry yetkili olduğundan (webhook'ta gelir) mağaza dönem bitişi kullanılır.
+        effectiveEnd = args.periodEndOverride ?? new Date(
           openSub.currentPeriodEnd.getTime() +
             (plan.billingPeriod === 'YEARLY' ? 365 : 30) * 86400_000,
         );
-        status = openSub.status === 'TRIALING' ? 'TRIALING' : 'ACTIVE';
+        status = openSub.status === 'TRIALING' && isTrialPeriod ? 'TRIALING' : 'ACTIVE';
         await tx.subscription.update({
           where: { id: openSub.id },
           data: {
@@ -173,9 +181,13 @@ export class SubscriptionsService {
             planId: plan.id,
           },
         });
-      } else if (plan.trialDays > 0 && !openSub) {
+      } else if ((plan.trialDays > 0 || isTrialPeriod) && !openSub) {
         status = 'TRIALING';
-        effectiveEnd = new Date(now.getTime() + plan.trialDays * 86400_000);
+        // RC deneme dönemi bitişi yetkilidir; yoksa plan.trialDays kullanılır.
+        effectiveEnd =
+          args.periodType === 'TRIAL' || args.periodType === 'INTRO'
+            ? storePeriodEnd
+            : new Date(now.getTime() + plan.trialDays * 86400_000);
         await tx.subscription.create({
           data: {
             userId: args.userId,
@@ -220,5 +232,123 @@ export class SubscriptionsService {
   private periodValid(sub: { status: string; currentPeriodEnd: Date | null }): boolean {
     if (sub.status === 'GRACE_PERIOD') return true;
     return sub.currentPeriodEnd ? sub.currentPeriodEnd.getTime() > Date.now() : false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Faz 7: mağaza odaklı yaşam döngüsü işlemleri (RevenueCat webhook'ları +
+  // entitlement senkronu). Tüm işlemler storeOriginalTransactionId ailesine
+  // etki eder; bulunamayan aile için sessiz no-op yapılır (webhook'lar yetkili
+  // ama geç olabilir — INITIAL_PURCHASE sırası garanti değildir).
+  // ---------------------------------------------------------------------------
+
+  /** CANCELLATION: dönem sonunda iptal — autoRenew kapanır, hak dönem bitene kadar sürer. */
+  async cancelAtPeriodEnd(originalTransactionId: string, canceledAt: Date = new Date()): Promise<number> {
+    const result = await this.prisma.subscription.updateMany({
+      where: {
+        storeOriginalTransactionId: originalTransactionId,
+        status: { in: ['TRIALING', 'ACTIVE', 'GRACE_PERIOD'] },
+      },
+      data: { autoRenew: false, canceledAt },
+    });
+    return result.count;
+  }
+
+  /** UNCANCELLATION: iptal geri alındı — otomatik yenileme yeniden açılır. */
+  async resumeAutoRenew(originalTransactionId: string): Promise<number> {
+    const result = await this.prisma.subscription.updateMany({
+      where: {
+        storeOriginalTransactionId: originalTransactionId,
+        status: { in: ['TRIALING', 'ACTIVE', 'GRACE_PERIOD'] },
+      },
+      data: { autoRenew: true, canceledAt: null },
+    });
+    return result.count;
+  }
+
+  /** EXPIRATION: abonelik süresi doldu / iptal edildi — hak kapanır. */
+  async markExpired(originalTransactionId: string): Promise<number> {
+    const result = await this.prisma.subscription.updateMany({
+      where: { storeOriginalTransactionId: originalTransactionId },
+      data: { status: 'EXPIRED', autoRenew: false, expiresAt: new Date() },
+    });
+    return result.count;
+  }
+
+  /**
+   * BILLING_ISSUE: ödeme sorunu. RC grace period içindeyse GRACE_PERIOD
+   * (hak sürer), aksi halde ON_HOLD (erişim durur). plan.gracePeriodDays
+   * ile "yumuşak iniş" süresi DB durumuna yansıtılır.
+   */
+  async markBillingIssue(
+    originalTransactionId: string,
+    opts: { inGracePeriod: boolean; expiresAt?: Date | null },
+  ): Promise<'GRACE_PERIOD' | 'ON_HOLD' | 'IGNORED'> {
+    const now = new Date();
+    const subs = await this.prisma.subscription.findMany({
+      where: {
+        storeOriginalTransactionId: originalTransactionId,
+        status: { in: ['TRIALING', 'ACTIVE', 'GRACE_PERIOD', 'ON_HOLD'] },
+      },
+      include: { plan: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (subs.length === 0) return 'IGNORED';
+    const target = subs[0]!;
+    if (!opts.inGracePeriod) {
+      await this.prisma.subscription.updateMany({
+        where: { id: { in: subs.map((s) => s.id) } },
+        data: { status: 'ON_HOLD', autoRenew: true },
+      });
+      return 'ON_HOLD';
+    }
+    // Grace dönemi: plan yapılandırmasına göre üst sınır uygulanır.
+    const graceEnd = new Date(now.getTime() + (target.plan?.gracePeriodDays ?? 16) * 86400_000);
+    await this.prisma.subscription.updateMany({
+      where: { id: { in: subs.map((s) => s.id) } },
+      data: { status: 'GRACE_PERIOD', autoRenew: true, expiresAt: graceEnd },
+    });
+    void opts.expiresAt;
+    return 'GRACE_PERIOD';
+  }
+
+  /** SUBSCRIPTION_PAUSED (Android): ON_HOLD — duraklatma süresince erişim yok. */
+  async markPaused(originalTransactionId: string): Promise<number> {
+    const result = await this.prisma.subscription.updateMany({
+      where: {
+        storeOriginalTransactionId: originalTransactionId,
+        status: { in: ['TRIALING', 'ACTIVE', 'GRACE_PERIOD'] },
+      },
+      data: { status: 'ON_HOLD' },
+    });
+    return result.count;
+  }
+
+  /** SUBSCRIPTION_RESUMED / duraklatma bitişi: erişimi geri açar. */
+  async markResumed(originalTransactionId: string, periodEnd?: Date): Promise<number> {
+    const result = await this.prisma.subscription.updateMany({
+      where: {
+        storeOriginalTransactionId: originalTransactionId,
+        status: { in: ['ON_HOLD', 'GRACE_PERIOD'] },
+      },
+      data: {
+        status: 'ACTIVE',
+        ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
+      },
+    });
+    return result.count;
+  }
+
+  /**
+   * Mağaza durumundan ürün çözümlemesi (RC product_id → plan).
+   * Bulunamazsa null döner; çağıran taraf bilinmeyen ürünü kayda geçer ama
+   * hak yazmadan bırakır.
+   */
+  async findPlanByProductId(productId: string) {
+    return this.prisma.plan.findFirst({
+      where: {
+        isActive: true,
+        OR: [{ platformProductIdIos: productId }, { platformProductIdAndroid: productId }],
+      },
+    });
   }
 }

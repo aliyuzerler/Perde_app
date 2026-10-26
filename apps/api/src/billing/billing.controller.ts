@@ -1,12 +1,15 @@
 /**
  * Billing uçları (API_CONTRACT §5, §8):
  *   GET  /billing/products        → aktif planlar + kredi paketleri (anonim)
+ *   GET  /billing/config          → sağlayıcı durumu + mağaza ürün kimlikleri (anonim)
  *   GET  /billing/subscription    → mevcut abonelik durumu (access)
- *   POST /billing/purchases/validate → mağaza doğrulama (access, Idempotency-Key)
+ *   POST /billing/purchases/validate → sağlayıcı doğrulamalı satın alma (access, Idempotency-Key)
+ *   POST /billing/entitlements/sync  → mağaza durumu eşitleme / geri yükleme (access)
  *   GET  /billing/purchases       → mağaza işlem geçmişi (access)
- *   POST /billing/webhooks        → sağlayıcı olayları (anonim, imzalı)
+ *   POST /billing/webhooks        → genel olay zarfı (anonim, HMAC imzalı)
+ *   POST /billing/webhooks/revenuecat → RevenueCat olayları (anonim, Bearer sırrı)
  */
-import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import {
@@ -14,6 +17,10 @@ import {
   purchaseValidateResponseSchema,
   purchaseValidateSchema,
   webhookIngestSchema,
+  entitlementSyncRequestSchema,
+  type BillingConfigResponse,
+  type EntitlementSyncRequest,
+  type EntitlementSyncResponse,
   type PurchaseValidate,
   type PurchaseValidateResponse,
   type StoreTransactionListResponse,
@@ -54,6 +61,13 @@ export class BillingController {
     return { ...plans, ...packs };
   }
 
+  @Public()
+  @Get('config')
+  @ApiOperation({ summary: 'Ödeme sağlayıcı durumu + mağaza ürün kimlikleri' })
+  async config(): Promise<BillingConfigResponse> {
+    return this.billing.getBillingConfig();
+  }
+
   @Get('subscription')
   @ApiOperation({ summary: 'Mevcut abonelik durumu' })
   async subscription(@CurrentUser() user: RequestUser) {
@@ -72,7 +86,7 @@ export class BillingController {
   }
 
   @Post('purchases/validate')
-  @ApiOperation({ summary: 'Mağaza satın almasını sunucuda doğrula (idempotent)' })
+  @ApiOperation({ summary: 'Mağaza satın almasını sağlayıcıyla doğrula (idempotent)' })
   async validatePurchase(
     @CurrentUser() user: RequestUser,
     @Req() req: Request,
@@ -95,6 +109,15 @@ export class BillingController {
     });
   }
 
+  @Post('entitlements/sync')
+  @ApiOperation({ summary: 'Mağaza abonelik/kredi durumunu sunucuyla eşitle (geri yükleme)' })
+  async syncEntitlements(
+    @CurrentUser() user: RequestUser,
+    @Body(new ZodValidationPipe(entitlementSyncRequestSchema)) dto: EntitlementSyncRequest,
+  ): Promise<EntitlementSyncResponse> {
+    return this.billing.syncEntitlements(user.id, dto.platform);
+  }
+
   @Get('purchases')
   @ApiOperation({ summary: 'Mağaza işlem geçmişi' })
   async purchases(
@@ -107,6 +130,7 @@ export class BillingController {
 
   @Public()
   @Post('webhooks')
+  @HttpCode(202)
   @ApiOperation({ summary: 'Ödeme sağlayıcısı webhook alımı (idempotent, 202)' })
   async webhooks(
     @Req() req: Request,
@@ -119,6 +143,21 @@ export class BillingController {
     );
     const result = await this.billing.ingestWebhook({ ...dto, signatureValid });
     return result;
+  }
+
+  @Public()
+  @Post('webhooks/revenuecat')
+  @HttpCode(202)
+  @ApiOperation({ summary: 'RevenueCat webhook alımı (Bearer sırrı, idempotent, 202)' })
+  async revenueCatWebhooks(@Req() req: Request): Promise<WebhookIngestResponse> {
+    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ?? '';
+    // RC Authorization başlığı bootstrap'ta guard'dan önce rcAuthorization'a
+    // taşınır (JWT guard çakışması — bootstrap.ts açıklamasına bakın).
+    const rcAuth = (req as Request & { rcAuthorization?: string }).rcAuthorization;
+    return this.billing.ingestRevenueCatWebhook({
+      rawBody,
+      headers: { authorization: rcAuth },
+    });
   }
 }
 

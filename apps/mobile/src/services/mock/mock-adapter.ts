@@ -13,6 +13,9 @@ import type {
   AccountDeletionResponse,
   AuthSession,
   AuthSessionListResponse,
+  BillingConfigResponse,
+  EntitlementSyncRequest,
+  EntitlementSyncResponse,
   EpisodeDetailResponse,
   FavoritesListResponse,
   FavoriteMutationResponse,
@@ -22,6 +25,8 @@ import type {
   PlaybackSession,
   PlansResponse,
   PublicUserProfile,
+  PurchaseValidate,
+  PurchaseValidateResponse,
   RegisterRequest,
   SearchParams,
   SearchResponse,
@@ -328,13 +333,39 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
       throw domainError(503, 'errors.playbackRequiresServer', 'SERVICE_UNAVAILABLE');
     },
 
-    // ---------------- Abonelik ve kredi (mock) ----------------
+    // ---------------- Abonelik ve kredi (Faz 7 mock) ----------------
     async getSubscriptionPlans(): Promise<PlansResponse> {
       return respond(mockPlansResponse);
     },
 
     async getCreditPacks(): Promise<CreditPacksResponse> {
       return respond(mockCreditPacksResponse);
+    },
+
+    async getBillingConfig(): Promise<BillingConfigResponse> {
+      // Mock ortamda mağaza yoktur; akış katmanı cihaz desteğini ayrıca
+      // bildirir (UNSUPPORTED_DEVICE). Konfigürasyon RC hazır şablonunu yansıtır.
+      return respond({
+        provider: 'revenuecat' as const,
+        configured: true,
+        revenuecat: { publicSdkKey: 'mock_public_sdk_key' },
+        subscriptionProducts: mockPlansResponse.plans.map((plan) => ({
+          planId: plan.id,
+          billingPeriod: plan.billingPeriod,
+          trialDays: plan.trialDays,
+          productIds: {
+            ios: `perdego.sub.${plan.id.toLowerCase()}`,
+            android: `perdego.sub.${plan.id.toLowerCase()}`,
+          },
+        })),
+        creditPackProducts: mockCreditPacks.map((pack) => ({
+          packId: pack.id,
+          productIds: {
+            ios: `perdego.pack.${pack.id.toLowerCase()}`,
+            android: `perdego.pack.${pack.id.toLowerCase()}`,
+          },
+        })),
+      });
     },
 
     async getWallet(): Promise<WalletResponse> {
@@ -347,51 +378,91 @@ export function createMockAdapter(): ContentApiPort & { getProfile: () => typeof
       });
     },
 
-    async purchaseCredits(packId: string): Promise<WalletResponse> {
-      const pack = mockCreditPacks.find((item) => item.id === packId);
-      if (!pack) {
-        const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
-        notFound.statusCode = 404;
-        await delay(randomLatency());
-        throw notFound;
-      }
+    /**
+     * Mock mağaza doğrulaması: sunucu akışının birebir taklidi — işlem
+     * kimliği tekilleştirme + cüzdana yazım. Gerçek ortamda bu uç RC
+     * ters sorgusuyla çalışır (Güvenlik-1); mock yalnız geliştirmede.
+     */
+    async validatePurchase(
+      input: PurchaseValidate & { idempotencyKey: string },
+    ): Promise<PurchaseValidateResponse> {
       await delay(randomLatency());
       if (controls.failNextRequest) {
         controls.failNextRequest = false;
         throw new Error('MOCK_NETWORK_FAILURE');
       }
-      const total = pack.credits + pack.bonusCredits;
-      mockWalletState.purchasedCredits += total;
-      mockWalletState.creditBalance += total;
-      mockTransactionLog.push({
-        id: `tx_${Date.now()}`,
-        kind: 'CREDIT_PURCHASE',
-        amount: total,
-        balanceAfter: mockWalletState.creditBalance,
-        createdAt: new Date().toISOString(),
-        label: `${pack.credits} kredi paketi`,
-      });
-      return walletSnapshot();
+      // Zaten işlenmiş işlem → alreadyProcessed (idempotent davranış).
+      const duplicate = mockTransactionLog.some(
+        (tx) => tx.id === `store_${input.storeTransactionId}`,
+      );
+      if (input.productType === 'SUBSCRIPTION') {
+        if (!duplicate) {
+          mockWalletState.subscriptionStatus = 'ACTIVE';
+          const renews = new Date();
+          renews.setMonth(renews.getMonth() + 1);
+          mockWalletState.subscriptionRenewsAt = renews.toISOString();
+          mockTransactionLog.push({
+            id: `store_${input.storeTransactionId}`,
+            kind: 'CREDIT_PURCHASE',
+            amount: 0,
+            balanceAfter: mockWalletState.creditBalance,
+            createdAt: new Date().toISOString(),
+            label: 'Abonelik etkinleştirildi (mock)',
+          });
+        }
+        return {
+          storeTransactionId: input.storeTransactionId,
+          alreadyProcessed: duplicate,
+          productType: 'SUBSCRIPTION' as const,
+          subscription: {
+            status: mockWalletState.subscriptionStatus,
+            currentPeriodEnd: mockWalletState.subscriptionRenewsAt,
+          },
+        };
+      }
+      if (!duplicate) {
+        const pack = mockCreditPacks.find((item) => input.productId.endsWith(item.id.toLowerCase()));
+        const total = pack ? pack.credits + pack.bonusCredits : 0;
+        mockWalletState.purchasedCredits += total;
+        mockWalletState.creditBalance += total;
+        mockTransactionLog.push({
+          id: `store_${input.storeTransactionId}`,
+          kind: 'CREDIT_PURCHASE',
+          amount: total,
+          balanceAfter: mockWalletState.creditBalance,
+          createdAt: new Date().toISOString(),
+          label: pack ? `${pack.credits} kredi paketi` : 'Kredi paketi (mock)',
+        });
+      }
+      return {
+        storeTransactionId: input.storeTransactionId,
+        alreadyProcessed: duplicate,
+        productType: 'CREDIT_PACK' as const,
+        wallet: {
+          purchased: mockWalletState.purchasedCredits,
+          granted: mockWalletState.grantedCredits,
+        },
+      };
     },
 
-    async subscribe(planId: string): Promise<WalletResponse> {
-      const plan = mockPlansResponse.plans.find((item) => item.id === planId);
-      if (!plan) {
-        const notFound = new Error('NOT_FOUND') as Error & { statusCode?: number };
-        notFound.statusCode = 404;
-        await delay(randomLatency());
-        throw notFound;
-      }
+    async syncEntitlements(input: EntitlementSyncRequest): Promise<EntitlementSyncResponse> {
       await delay(randomLatency());
-      if (controls.failNextRequest) {
-        controls.failNextRequest = false;
-        throw new Error('MOCK_NETWORK_FAILURE');
-      }
-      mockWalletState.subscriptionStatus = 'ACTIVE';
-      const renews = new Date();
-      renews.setMonth(renews.getMonth() + 1);
-      mockWalletState.subscriptionRenewsAt = renews.toISOString();
-      return walletSnapshot();
+      void input;
+      return {
+        syncedAt: new Date().toISOString(),
+        subscription: {
+          status: mockWalletState.subscriptionStatus,
+          planId: mockWalletState.subscriptionStatus === 'NONE' ? null : 'SUB_MONTHLY',
+          autoRenew: mockWalletState.subscriptionStatus === 'ACTIVE',
+          currentPeriodEnd: mockWalletState.subscriptionRenewsAt ?? null,
+          willRenew: mockWalletState.subscriptionStatus === 'ACTIVE',
+        },
+        wallet: {
+          purchased: mockWalletState.purchasedCredits,
+          granted: mockWalletState.grantedCredits,
+          total: mockWalletState.creditBalance,
+        },
+      };
     },
 
     // ---------------- Hesap (Faz 3b mock — sunucu akışının birebir taklidi) ---

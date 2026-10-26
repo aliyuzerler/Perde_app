@@ -149,6 +149,14 @@ export const envSchema = z
         'PRODUCTION ortamında MEDIA_PROVIDER=local seçilemez (docs/MEDIA_SETUP.md — canlı sağlayıcı kurulumuna bakın)',
       path: ['MEDIA_PROVIDER'],
     },
+  )
+  .refine(
+    (env) => env.NODE_ENV !== 'production' || Boolean(env.WEBHOOK_SIGNING_SECRET),
+    {
+      message:
+        'PRODUCTION ortamında WEBHOOK_SIGNING_SECRET zorunludur — oynatma/yükleme imza sırrı; DATABASE_URL türetimli fallback yalnız geliştirme içindir (FAZ 6 bulgusu F6-01)',
+      path: ['WEBHOOK_SIGNING_SECRET'],
+    },
   );
 
 export type Env = z.infer<typeof envSchema>;

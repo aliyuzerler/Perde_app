@@ -25,7 +25,7 @@ PASS · P2C-22 kategori içeriği sayfalı — aksiyon: 1 yapım
 PASS · P2C-23 kimliksiz watchlist → 401
 PASS · P2C-24 favori ekle (idempotent) + listede
 PASS · P2C-25 favoriden çıkar + listeden düşer
-PASS · P2C-26 izleme: continue + history ayrı uçlar — continue=3 history=3
+PASS · P2C-26 izleme: continue + history ayrı uçlar — continue=2 history=2
 PASS · P2C-27 history sayfalama meta
 PASS · P2C-28 continue satırı: episode+content+pozisyon — Gece Yarısı Treni S1B1 @12s
 PASS · P2C-29 viewer admin ucu → 403 — code=FORBIDDEN reason=ADMIN_ONLY

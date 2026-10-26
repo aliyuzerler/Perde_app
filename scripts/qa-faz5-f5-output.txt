@@ -3,7 +3,7 @@ FAZ 5 ek probe → http://localhost:3000/api/v1
 PASS · F5-01 titles tüm sayfalar: mükerrer yok + toplam tutar — yürünen=6 total=6 dup=0
 PASS · F5-02 arama tüm sayfalar: mükerrer yok + toplam tutar — yürünen=3 total=3 dup=0
 PASS · F5-03 kategori tüm sayfalar: mükerrer yok + toplam tutar — aksiyon: yürünen=1 total=1 dup=0 | komedi: yürünen=1 total=1 dup=0
-PASS · F5-04 geçmiş tüm sayfalar: mükerrer yok + toplam tutar — yürünen=3 total=3 dup=0
+PASS · F5-04 geçmiş tüm sayfalar: mükerrer yok + toplam tutar — yürünen=2 total=2 dup=0
 PASS · F5-05 favoriler: tam liste (meta sözleşme gereği yok) mükerrer yok + eklenen listede — öğe=1 dup=0 eklenenListede=true
 PASS · F5-06a izolasyon önkosulu: yayında bölüm bulundu — gece-yarisi-treni S1B1
 PASS · F5-06b A'nın favorisi + ilerlemesi kaydedildi
@@ -44,7 +44,7 @@ FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
       "id": "F5-04",
       "name": "geçmiş tüm sayfalar: mükerrer yok + toplam tutar",
       "ok": true,
-      "extra": "yürünen=3 total=3 dup=0"
+      "extra": "yürünen=2 total=2 dup=0"
     },
     {
       "id": "F5-05",

@@ -58,6 +58,10 @@ MEDIA_PROCESSING_DELAY_MS=1500    # sahte transkod gecikmesi (test: 0)
 
 > `WEBHOOK_SIGNING_SECRET` tanımlıysa oynatma/yükleme imzaları da ondan
 > türetilir; tanımsızsa geliştirmeye özel türemiş sır kullanılır.
+> **FAZ 6 (F6-01): `PRODUCTION` ortamında bu sır ZORUNLUDUR** — tanımsızsa
+> API açılmaz (env doğrulaması reddeder). Türemiş sır `DATABASE_URL`'den
+> üretildiği için öngörülebilir; üretimde en az 32 rastgele karakter
+> verin (ör. `openssl rand -hex 32`).
 
 ### 3.2 Örnek medya paketlerini üret (telifsiz, sentetik)
 

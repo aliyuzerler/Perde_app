@@ -105,9 +105,13 @@ export class MediaService {
 
     // Kayıtlı kullanıcı: oturum satırı (sahiplik + iptal + limit). Misafir:
     // yalnızca imzalı kısa ömürlü URL (BR-08 — FREE içerik konuklara açık).
+    // KRİTİK: satır kimliği URL'deki sessionId İLE AYNI olmalı — aksi halde
+    // verifyPlaybackRequest satırı bulamaz ve premium istekler reddedilir
+    // (FAZ 6 bulgusu F6-02: satır cuid ile üretiliyor, URL uuid taşıyordu —
+    // iptal/süre denetimi fiilen hiç çalışmıyordu).
     if (!guest) {
       await this.prisma.playbackSession.create({
-        data: { userId: fullUser.id, episodeId, expiresAt },
+        data: { id: sessionId, userId: fullUser.id, episodeId, expiresAt },
       });
     }
 
@@ -165,7 +169,11 @@ export class MediaService {
    * İmzalı oynatma istekleri için ortak doğrulama:
    *   1. HMAC token + süre,
    *   2. oturum iptali/süresi (DB'deki kayıtlı oturumlar),
-   *   3. bölüm/medya READY durumu (kaldırılmış içerik anında kesilir).
+   *   3. premium (FREE olmayan) bölümde canlı oturum satırı şartı — imza
+   *      sırrı sızsa/öngörülebilir olsa bile var olmayan sessionId ile
+   *      premium dosya servis edilmez (FAZ 6 bulgusu F6-01; konuk FREE
+   *      akışı BR-08 gereği satırsız çalışmayı sürdürür),
+   *   4. bölüm/medya READY durumu (kaldırılmış içerik anında kesilir).
    */
   async verifyPlaybackRequest(
     episodeId: string,
@@ -183,6 +191,18 @@ export class MediaService {
     const session = await this.prisma.playbackSession.findUnique({ where: { id: sessionId } });
     if (session && (session.revokedAt || session.expiresAt.getTime() < Date.now())) {
       throw DomainError.forbidden('TOKEN_INVALID', 'errors.tokenInvalid');
+    }
+    // Premium içerik: oturum satırı olmadan dosya yok. Üyelikli bölümlerde
+    // oturum her zaman kayıtlıdır (createPlaybackSession); satır yokluğu
+    // SAHTE/konuk-denemeli istektir.
+    const episode = await this.prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { accessType: true },
+    });
+    if (episode && episode.accessType !== 'FREE') {
+      if (!session || session.revokedAt || session.expiresAt.getTime() < Date.now()) {
+        throw DomainError.forbidden('TOKEN_INVALID', 'errors.tokenInvalid');
+      }
     }
 
     const media = await this.prisma.episodeMedia.findFirst({

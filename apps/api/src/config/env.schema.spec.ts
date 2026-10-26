@@ -5,6 +5,11 @@ const baseEnv = {
   DATABASE_URL: 'postgresql://perdego:parola@localhost:5432/perdego',
 };
 
+/** Base64 kodlu sahte PEM üretici (test anahtarı — geçersiz içerik, yalnız biçim denetimi). */
+const fakePem = (tag: string) => `-----BEGIN ${tag}-----\nZmFrZQ==\n-----END ${tag}-----`;
+const fakePrivKey = Buffer.from(fakePem('RSA PRIVATE KEY')).toString('base64');
+const fakePubKey = Buffer.from(fakePem('PUBLIC KEY')).toString('base64');
+
 describe('loadEnv (ortam değişkeni doğrulaması)', () => {
   it('eksik DATABASE_URL için anlaşılır hata verir', () => {
     const result = loadEnv({});
@@ -60,5 +65,38 @@ describe('loadEnv (ortam değişkeni doğrulaması)', () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.includes('REDIS_URL'))).toBe(true);
+  });
+
+  it('PRODUCTION: JWT + canlı sağlayıcı + WEBHOOK_SIGNING_SECRET ile doğrulanır', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+      WEBHOOK_SIGNING_SECRET: 'cok-gizli-uretim-sigorta-anahtari-1234',
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('PRODUCTION: WEBHOOK_SIGNING_SECRET yoksa hata verir (F6-01 — DATABASE_URL türetimli fallback üretimde yasak)', () => {
+    const result = loadEnv({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      MEDIA_PROVIDER: 'bunny',
+      JWT_ACCESS_PRIVATE_KEY: fakePrivKey,
+      JWT_ACCESS_PUBLIC_KEY: fakePubKey,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.includes('WEBHOOK_SIGNING_SECRET'))).toBe(true);
+  });
+
+  it('DEVELOPMENT: WEBHOOK_SIGNING_SECRET tanımsız olabilir (fallback serbest)', () => {
+    const result = loadEnv({ ...baseEnv, NODE_ENV: 'development' });
+
+    expect(result.ok).toBe(true);
+    expect(result.env?.WEBHOOK_SIGNING_SECRET).toBeUndefined();
   });
 });

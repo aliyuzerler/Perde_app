@@ -19,7 +19,7 @@ import { Client } from 'pg';
 import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 import { RateLimiterService } from './auth/rate-limit.service.js';
@@ -285,6 +285,42 @@ describe.skipIf(!dbAvailable)('Faz 4 — medya altyapısı entegrasyon (gerçek 
     expired.searchParams.set('exp', '1000000000');
     // exp değiştiği için imza da uyuşmaz → 403
     expect((await fetch(expired)).status).toBe(403);
+  });
+
+  it('03b · sahte token savunması (F6-01): premium bölümde var olmayan oturum kimliği 403; FREE bölümde satırsız konuk akışı imzayla korunur', async () => {
+    // Geliştirme fallback sırrı (DATABASE_URL türetimi) — üretimde WEBHOOK_SIGNING_SECRET
+    // zorunlu (env.schema refine F6-01); test sırı biliyormuş gibi saldırıyı kanıtlar.
+    const secret = `perdego-dev-playback-${process.env.DATABASE_URL!.slice(-24)}`;
+    const sign = (sessionId: string, episodeId: string, exp: number) =>
+      createHmac('sha256', secret)
+        .update(`playback:${sessionId}:${episodeId}:${exp}`)
+        .digest('hex')
+        .slice(0, 32);
+    const exp = Math.floor(Date.now() / 1000) + 300;
+
+    // Premium (SUBSCRIPTION) bölüm + rastgele oturum kimliği → oturum satırı yok → 403
+    const subDetail = await api<{
+      accessSeasons: Array<{ episodes: Array<{ id: string; accessType: string }> }>;
+    }>('GET', '/catalog/titles/son-vardiya');
+    const subEp = subDetail.body.data!.accessSeasons[0]!.episodes.find(
+      (e) => e.accessType === 'SUBSCRIPTION',
+    )!;
+    const forgedSessionId = randomUUID();
+    const forgedUrl = `${baseUrl}/api/v1/media/hls/${subEp.id}/${forgedSessionId}/master.m3u8?token=${sign(forgedSessionId, subEp.id, exp)}&exp=${exp}`;
+    const forgedRes = await fetch(forgedUrl);
+    expect(forgedRes.status).toBe(403);
+
+    // FREE bölüm + rastgele oturum kimliği → konuk satırsız akış (BR-08) geçerli imzayla çalışır
+    const freeDetail = await api<{
+      accessSeasons: Array<{ episodes: Array<{ id: string; accessType: string }> }>;
+    }>('GET', '/catalog/titles/kayip-sinyal');
+    const freeEp = freeDetail.body.data!.accessSeasons[0]!.episodes.find(
+      (e) => e.accessType === 'FREE',
+    )!;
+    const guestSessionId = randomUUID();
+    const guestUrl = `${baseUrl}/api/v1/media/hls/${freeEp.id}/${guestSessionId}/master.m3u8?token=${sign(guestSessionId, freeEp.id, exp)}&exp=${exp}`;
+    const guestRes = await fetch(guestUrl);
+    expect(guestRes.status).toBe(200);
   });
 
   it('04 · erişim kararı: SUBSCRIPTION konuk/aboneliksiz 402 → abonelikle 201; CREDIT 402; DRAFT 404', async () => {

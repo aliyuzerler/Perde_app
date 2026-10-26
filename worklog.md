@@ -296,3 +296,23 @@ Stage Summary:
 - Karar: FAZ 4 geliştirme kapsamı TAMAM — 12 oynatıcı özelliği + 10 video altyapı kuralı uygulandı ve kanıtlandı; kabul doğrulaması sonraki faz QA koşumudur.
 - Değişen dosyalar: api (media/provider×3, media controller/service/module, admin media controller, env, prisma schema+migration+seed, eslint), mobile (player bileşen/hook seti, ekran yenileme, i18n, adapter), contracts (media.ts), docs ×4, scripts ×5 (yeni QA araçları).
 - Sonraki ajan için: gerçek cihaz doğrulaması (native HLS/altyazı/tam ekran) EAS build sonrası; canlı sağlayıcı adapter'ı eklenirken MEDIA_SETUP.md §4 tablosu esas; UI E2E'de aria-label çakışmalarına dikkat (alt ekranlar mount kalır); probe yeniden koşumu: bash scripts/qa-faz4-run-probes.sh (örnek paketler için önce scripts/generate-sample-media.sh).
+
+---
+Task ID: 15
+Agent: Ana ajan (Z.ai)
+Task: FAZ 6 Testi (Video ve HLS) — expo-video oynatıcı + backend video erişim mekanizmasının kabul doğrulaması
+
+Work Log:
+- Doğrulanan faz: FAZ 4 geliştirmesi (commit 3550145). Ortam sıfırdan kurtarıldı: kök .env (SQLite zehirlenmesi) git'ten geri alındı, deps + prisma client, apps/api/.env, embedded PG 16 (qa-pg package.json yeniden yaratıldı), migrate+seed, ffmpeg örnek HLS paketleri.
+- Statik: typecheck 4/4, lint 4/4, build api+admin+expo-web yeşil. Testler: 345/345 (contracts 58 + api 154 [30 gerçek-PG entegrasyon] + mobile 133).
+- Canlı: FAZ4 media probe 44/44 + YENİ güvenlik probe (scripts/qa-faz6-security-probe.mjs, PLAYBACK_TTL_SECONDS=60) 18/18 + UI E2E (Playwright, MOCK_API=0) 17/17 + regresyon P2C 41/41, F5 16/16, auth 22/22, faz2b smoke 13/13.
+- MADDE KARŞILAMA: 12 madde tümü kanıtlı (yükleme→READY takibi, HLS manifest/segment/vtt/mp4, oynat-duraklat-ses-ilerleme, bölüm sonu/sonraki, watch-progress, kaldığı yerden devam, çevrimdışı+toparlanma, GERÇEK TTL dolumu 403 TOKEN_EXPIRED, yetkisiz SUB/CREDIT 402→satın al→unlock→201, çapraz kullanıcı URL ölçümü, <video> DOM temizliği, paket sızıntı taraması 9 desen + API yanıt taraması 5 desen → temiz).
+- BULUNAN VE DÜZELTİLEN KUSURLAR: F6-01 (YÜKSEK): üretimde WEBHOOK_SIGNING_SECRET zorunlu değildi + fallback sır DATABASE_URL'den türetiliyordu + satırsız sessionId premium manifest alıyordu (canlı 200 kanıtı) → env refine + premiumda canlı oturum satırı şartı; F6-02 (YÜKSEK, gizli): playback oturum satırı cuid, URL uuid taşıyordu → iptal/süre denetimi fiilen ölüydü → satır id:sessionId; F6-03 (probe araç hataları) düzeltildi; F6-04 (DÜŞÜK): UI E2E ilk koşum Metro soğuk derleme timeout'u → 2. koşum 17/17.
+- ÖDÜNLER: bearer imzalı URL (TTL sınırlı çapraz kullanıcı erişimi), dev fallback re-sign (üretimde sırrı güçlü+zorunlu), BR-08 FREE satırsız konuk akışı (testle sabitlendi).
+- Yeni testler: env şema +3, entegrasyon 03b +1 (sahte token premium 403 / FREE konuk 200).
+- Rapor: docs/qa/FAZ-6-QA.md (PASS WITH WARNINGS). MEDIA_SETUP.md'ye üretim sırrı zorunluluğu işlendi.
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriteri (yetkili oynatır, yetkisiz backend'de kesilir) canlı kanıtla sağlandı; iki YÜKSEK güvenlik kusuru bu fazda düzeltildi ve regresyonla doğrulandı.
+- Dürüst sınırlar: gerçek cihaz (EAS) ve canlı sağlayıcı (Bunny/Mux/CF) doğrulanamadı; Mailpit SMTP yok (outbox transport).
+- Sonraki ajan için: üretim env'ine WEBHOOK_SIGNING_SECRET (openssl rand -hex 32) ekleyin — artık API açılış şartı; UI E2E ilk-yükleme timeout artışı cila; bearer URL sertleştirmesi (cihaz bağlama) sonraki faz önerisi; probe yeniden koşum: bash scripts/qa-faz6-run-probes.sh (61 sn TTL bekleme içerir).

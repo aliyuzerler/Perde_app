@@ -133,3 +133,11 @@ metaverisi, hata izleme (Sentry benzeri).
 
 **Kabul Kriterleri**: bildirim izin akışı doğru; release build üzerinde smoke test
 geçer; sırlar yalnızca EAS secrets/ortam değişkenlerinden gelir.
+
+**Durum**: ✅ **FAZ 10 (sertleştirme + mağaza hazırlık QA) tamam** — 526/526
+otomatik test, 438 canlı kabul/güvenlik kontrolü, temiz-DB migration kanıtı;
+2 Yüksek bulgu (step-up brute-force sınırı, güvenlik başlıkları) + Swagger
+üretim kapısı + bağımlılık yamaları düzeltildi. RC 1.0.0: `RELEASE_CHECKLIST.md`,
+`docs/qa/FAZ-10-QA.md`, `docs/qa/FINAL_RELEASE_REPORT.md`,
+`docs/store/` (listeleme/gizlilik/koşullar/review). Mağaza gönderimi harici
+hesap/cihaz adımlarına bağlı (checklist §10-11).

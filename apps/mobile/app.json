@@ -2,7 +2,7 @@
   "expo": {
     "name": "PerdeGo",
     "slug": "perdego",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "perdego",
@@ -10,7 +10,9 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "supportsTablet": false,
-      "bundleIdentifier": "com.perdego.app"
+      "bundleIdentifier": "com.perdego.app",
+      "buildNumber": "1",
+      "infoPlist": {}
     },
     "android": {
       "package": "com.perdego.app",
@@ -20,7 +22,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 1
     },
     "web": {
       "output": "static",

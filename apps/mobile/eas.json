@@ -1,0 +1,53 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_MOCK_API": "0",
+        "EXPO_PUBLIC_API_BASE_URL": "http://localhost:3002"
+      },
+      "channel": "development"
+    },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_MOCK_API": "0",
+        "EXPO_PUBLIC_API_BASE_URL": "https://staging-api.perdego.com"
+      },
+      "channel": "staging",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_MOCK_API": "0",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.perdego.com"
+      },
+      "channel": "production",
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "LERİ_KULLANICI_APPLE_ID",
+        "ascAppId": "LERİ_KULLANICI_ASC_APP_ID",
+        "appleTeamId": "LERİ_KULLANICI_TEAM_ID"
+      }
+    }
+  }
+}

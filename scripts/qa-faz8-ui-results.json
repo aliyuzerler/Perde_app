@@ -22,7 +22,7 @@
   {
     "step": "U4 Toplam Kullanıcı kartı veriyle dolu",
     "status": "PASS",
-    "detail": "kart='TOPLAM KULLANICI\\n\\n3\\n\\n+3 (aralıkta) · 3 a'"
+    "detail": "kart='TOPLAM KULLANICI\\n\\n45\\n\\n+45 (aralıkta) · 4'"
   },
   {
     "step": "U5 reload sonrası oturum korunur",
@@ -32,12 +32,12 @@
   {
     "step": "U6 boş yapım formu → sunucu doğrulama hataları görüntülenir",
     "status": "PASS",
-    "detail": "hata öğesi=5"
+    "detail": "hata öğesi=7"
   },
   {
     "step": "U7 UI ile taslak oluşturuldu → detay sayfası açıldı",
     "status": "PASS",
-    "detail": "id=cmvp1oaat000…"
+    "detail": "id=cmvpbjtue000…"
   },
   {
     "step": "U8 detay bilgisi kaydedildi (başarı bildirimi)",

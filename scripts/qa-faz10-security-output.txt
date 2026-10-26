@@ -1,4 +1,4 @@
-FAZ 10 GÜVENLİK PROBE KOŞUMU — 2026-10-26T11:55:50+00:00
+FAZ 10 GÜVENLİK PROBE KOŞUMU — 2026-10-26T13:54:43+00:00
 FAZ 10 güvenlik probe'u — faz A — http://127.0.0.1:3197/api/v1
 
 ──── S0 — Ortam ve tohum hesaplar ────
@@ -83,14 +83,14 @@ FAZ 10 güvenlik probe'u — faz A — http://127.0.0.1:3197/api/v1
   PASS A10.4 HSTS test ortamında yok (üretimde var)
 
 ──── S13 — Performans (sentetik büyük katalog) ────
-  (sentetik katalog kuruldu: 2000 yapım / 8000 bölüm, 144ms)
-  katalog sayfa 1: ort=5ms max=7ms status=200
+  (sentetik katalog kuruldu: 2000 yapım / 8000 bölüm, 149ms)
+  katalog sayfa 1: ort=7ms max=10ms status=200
   PASS A13.1 katalog sayfa 1 ort < 300ms
-  katalog derin sayfa 50: ort=6ms max=7ms status=200
+  katalog derin sayfa 50: ort=6ms max=8ms status=200
   PASS A13.2 derin sayfa ort < 300ms
-  arama (qa10perf): ort=8ms max=9ms status=200
+  arama (qa10perf): ort=6ms max=9ms status=200
   PASS A13.3 arama ort < 300ms
-  devam et (300 satır kullanıcı): ort=6ms max=6ms status=200
+  devam et (300 satır kullanıcı): ort=5ms max=6ms status=200
   PASS A13.4 devam et ort < 300ms
   PASS A13.5 yayın listesi indeks kullanıyor (status,publishedAt DESC)
   PASS A13.6 sentetik veri temizlendi

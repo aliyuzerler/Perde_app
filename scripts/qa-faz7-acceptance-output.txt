@@ -1,4 +1,4 @@
-FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T11:04:42+00:00
+FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T13:42:02+00:00
 
 ########## FAZ A: sağlayıcı=none, NODE_ENV=test, port 3199 ##########
 
@@ -42,23 +42,15 @@ FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T11:04:42+00:00
 [PASS] B-08-rc-kredi-paketi-ve-iade-clawback — RC kredi paketi +25 → harcama 2 → REFUND clawback → purchased=0, REFUND ledger tek satır, iade tekrarı SKIPPED
 [PASS] B-09-rc-bilinmeyen-kullanici-ve-urun-failed — bilinmeyen kullanıcı/ürün → FAILED (sessiz kayıp yok), kredi verilmedi
 [PASS] B-10-rc-billing-issue-grace-ve-hold — BILLING_ISSUE: grace'siz → ON_HOLD (erişim durur), grace'li → GRACE_PERIOD (hak sürer)
-[PASS] B-11-rc-transfer-sahiplik — TRANSFER → işlem cmvp5gj9… → cmvp5gja… taşındı (kredi bakiyesi faz kaydı: harcama cüzdanı kaynakta kalır — raporda belgeli sınırlama)
+[PASS] B-11-rc-transfer-sahiplik — TRANSFER → işlem cmvpb2v8… → cmvpb2v8… taşındı (kredi bakiyesi faz kaydı: harcama cüzdanı kaynakta kalır — raporda belgeli sınırlama)
 [PASS] B-12-rc-test-ve-bilinmeyen-olay-tipi — TEST no-op PROCESSED; ileri uyum: bilinmeyen olay hataya düşmez
 [PASS] B-14-sync-saglayici-erisilemez-503 — RC erişilemez → sync 503 BILLING_PROVIDER_UNREACHABLE (fail-closed, sahte senkron yok)
-[PASS] B-13-webhook-events-denetim-izi — UNIQUE(source,eventId) ihlali yok; durum dağılımı: FAILED=8, PROCESSED=84, SKIPPED=12
+[PASS] B-13-webhook-events-denetim-izi — UNIQUE(source,eventId) ihlali yok; durum dağılımı: FAILED=2, SKIPPED=3, PROCESSED=21
 
 --- FAZ B SONUÇ: 14 PASS, 0 WARN, 0 FAIL (toplam 14) ---
 
 ########## FAZ C: üretim savunma kanıtları (env şeması + sağlayıcı) ##########
-[PASS] C-01-prod-jwt-zorunlu — reddedildi: - JWT_ACCESS_PRIVATE_KEY: PRODUCTION ortamında JWT anahtarları zorunludur (geliştirmede geçici üretilir)
-[PASS] C-02-prod-local-media-reddedilir — reddedildi: - MEDIA_PROVIDER: PRODUCTION ortamında MEDIA_PROVIDER=local seçilemez (docs/MEDIA_SETUP.md — canlı sağlayıcı kurulumuna bakın)
-[PASS] C-03-prod-webhook-sirri-zorunlu — reddedildi: - WEBHOOK_SIGNING_SECRET: PRODUCTION ortamında WEBHOOK_SIGNING_SECRET zorunludur — oynatma/yükleme imza sırrı; DATABASE_URL türetimli fallback yalnız geliştirme
-[PASS] C-04-prod-rc-yarim-yapilandirma — reddedildi: - BILLING_PROVIDER: BILLING_PROVIDER=revenuecat için REVENUECAT_SECRET_API_KEY ve REVENUECAT_WEBHOOK_AUTH_SECRET birlikte zorunludur (docs/BILLING_SETUP.md) | -
-[PASS] C-05-prod-rc-public-sdk-zorunlu — reddedildi: - REVENUECAT_PUBLIC_SDK_KEY: PRODUCTION + BILLING_PROVIDER=revenuecat için REVENUECAT_PUBLIC_SDK_KEY zorunludur (mobil SDK herkese açık anahtar)
-[PASS] C-06-prod-gecerli-yapilandirma — üretim + tam RC yapılandırması kabul edildi
-[PASS] C-07-simule-saglayici-uretimde-kapali — configured=false (true), verifyPurchase throw=true, fetchSubscriberState throw=true (sahte başarı üretilemez)
+scripts/qa-faz7-run-acceptance.sh: line 129: pnpm: command not found
 
---- FAZ C SONUÇ: 7 PASS, 0 FAIL ---
-
-KOŞUM ÖZETİ: FAZ A=0, FAZ B=0, FAZ C=0 (0=başarılı)
-KABUL PROBE: TÜMÜ GEÇTİ
+KOŞUM ÖZETİ: FAZ A=0, FAZ B=0, FAZ C=127 (0=başarılı)
+KABUL PROBE: BAŞARISIZLIK VAR

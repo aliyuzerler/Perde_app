@@ -448,3 +448,23 @@ Stage Summary:
 - Karar: PASS WITH WARNINGS — kabul kriteri (tercihler uygulanıyor, doğru hedefe yönlendirme, mükerrer kontrolü) canlı + otomatik kanıtla sağlandı; kritik hata yok, sonraki faza geçilebilir.
 - Dürüst sınırlar: gerçek cihaz push (APNs/FCM), OS izin diyaloğu, soğuk başlangıç cihaz üstü doğrulanamadı (cihaz/EAS projectId yok) — PUSH_SETUP §4-5 üretim öncesi zorunlu; exp.host adapter mock fetch ile birim testli.
 - Sonraki ajan için: P2C probe'u öncesi qa-faz8-cleanup-p2c-rerun.sh koş (artık Restrict FK'leri de temizliyor + probe'a taban adresi geçiyor); P2C-18 "ilk yapım" varsayımı yüzünden QA verisi temiz değilse FAIL üretir (ürün hatası değil); 520 otomatik test tabanı artık 272 api içeriyor.
+---
+Task ID: 12
+Agent: Ana ajan (Z.ai)
+Task: FAZ 10 — Release Candidate, güvenlik sertleştirmesi ve mağaza hazırlık QA (RELEASE CANDIDATE VE REGRESYON testi)
+
+Work Log:
+- Temel koşum: typecheck 4/4, lint 4/4, 526/526 test (contracts 95 + api 278 gerçek PG + mobile 153), build api+admin yeşil (bash scripts/qa-faz10-baseline.sh — son koşum TÜMÜ YEŞİL).
+- Temiz veritabanı: sıfır PG'de 6 migration + seed (7 içerik/13 bölüm/2 plan/3 paket) — perdego_faz10clean kanıtı.
+- FAZ 10 güvenlik probe'u (apps/api/scripts/qa-faz10-security-probe.mjs + scripts/qa-faz10-run.sh): Faz A 67/67 (RBAC, veri izolasyonu, webhook replay, eşzamanlı unlock yarışı → tek 2xx + bakiye tam 1 düşüş, yetersiz kredi 402, süresi dolmuş abonelik 402, playback token bozuk/süresi dolmuş/iptal 403, SQLi/XSS/gövde/traversal/alg=none, debug yüzeyi, başlıklar, 2k/8k sentetik katalogda sayfalama 5-8ms + EXPLAIN indeks kanıtı, BR-04 append-only DELETE reddi), Faz B 15/15 (RC Bearer/replay/iade clawback/fake satın alma fail-closed), Faz C 20/20 (login 5, register 3, reset 3, step-up 5 /dk → 429), Faz D 7/7 üretim env savunmaları, S12 log maskeleme. TOPLAM 438 canlı kontrol, 0 başarısız.
+- BULUNAN VE DÜZELTİLEN KUSURLAR: F10-01 (YÜKSEK) güvenlik başlıkları yoktu → bootstrap middleware (nosniff/DENY/no-referrer; HSTS üretimde) + bootstrap.spec.ts 6 test; F10-02 (YÜKSEK) /auth/step-up rate limitsiz brute-force açığı → AUTH_RATE_LIMIT_STEPUP_MAX (5/dk) + faz8 spec env kalibrasyonu; F10-03 (Orta) Swagger üretimde açıktı → üretimde kapalı (SWAGGER_ENABLED bilinçli açma); F10-04 (Düşük) mailer alıcı e-postası logda maskesiz → ku***@ maskesi; F10-05 (Düşük) takip edilen bayat kök .env → repo'dan çıkarıldı; F10-06 (YÜKSEK) js-yaml 5.3.0 + multer 2.4.0 savunmasız → pnpm-workspace.yaml overrides (5.4.1 / 2.5.0) — pnpm 12'de overrides'ın workspace.yaml'dan okunduğu gözlendi (package.json pnpm alanı kaldırıldı).
+- Ortam onarımları: sandbox node_modules + dist + .next + apps/api/.env + scripts/qa-pg/package.json temizlemeleri yeniden kuruldu; corepack shim'leri ~/.local/bin'e tekrar kuruldu; tüm koşumlar tek çağrıda PG ön-kurulumlu.
+- Regresyon (taze DB): faz4 44/44, AUTH 22/22, F5 16/16, P2C 41/41, faz7 42/42, faz8 102/102 + UI E2E 19/19, faz9 36/36 — TÜMÜ GEÇTİ. Örnek medya paketleri (a/b/c) yeniden üretildi.
+- Mağaza hazırlığı: apps/mobile/eas.json (development/staging/production + kanal + env ayrımı; submit placeholder LERİ_), app.json version 1.0.0 / versionCode 1 / buildNumber 1, docs/store/{STORE_LISTINGS,PRIVACY_POLICY,TERMS_OF_SERVICE,REVIEW_NOTES}.md (taslak — LERİ_ alanları + hukuk onayı), ürün kimliği eşlemeleri doğrulandı (perdego.sub.monthly/yearly, perdego.pack.pack_10/25/60).
+- Raporlar: RELEASE_CHECKLIST.md (kök, dürüst ✅/⚠️/❌ işaretleri + kullanıcıdan istenecek 10 harici gereksinim + sıralı manuel adımlar), docs/qa/FAZ-10-QA.md, docs/qa/FINAL_RELEASE_REPORT.md, ROADMAP faz 7 durum notu.
+- audit --prod: 4 açık → 2 düzeltildi; kalan node-forge (yama yok) + zod yalnız @expo/cli geliştirme araç zincirinde (cihaza gitmez) — kabul edilmiş risk.
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — RC 1.0.0 kod olarak yayına hazır (kritik güvenlik/ödeme/veri bütünlüğü/video erişim hatası YOK); mağaza gönderimi harici hesap/cihaz/hukuk adımlarına bağlı (RELEASE_CHECKLIST §10-11).
+- Dürüst sınırlar: gerçek cihaz/emülatör, gerçek push (APNs/FCM), gerçek mağaza sandbox satın alması, EAS build doğrulanamadı — mock sonuç üretim kanıtı olarak sunulmadı.
+- Sonraki ajan için: RC sandbox açılırsa sıra: RC hesapları → eas init → PUSH_SETUP §4-5 → sandbox satın alma → qa-faz7/qa-faz10 runner'ları yeniden koş; faz8 UI E2E production admin .next gerektirir (build öncesi koşulmalı); pnpm overrides artık pnpm-workspace.yaml'da.

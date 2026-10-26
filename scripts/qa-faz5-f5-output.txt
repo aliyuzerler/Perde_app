@@ -1,11 +1,11 @@
 FAZ 5 ek probe → http://localhost:3000/api/v1
 
-PASS · F5-01 titles tüm sayfalar: mükerrer yok + toplam tutar — yürünen=11 total=11 dup=0
+PASS · F5-01 titles tüm sayfalar: mükerrer yok + toplam tutar — yürünen=6 total=6 dup=0
 PASS · F5-02 arama tüm sayfalar: mükerrer yok + toplam tutar — yürünen=3 total=3 dup=0
-PASS · F5-03 kategori tüm sayfalar: mükerrer yok + toplam tutar — aksiyon: yürünen=3 total=3 dup=0 | komedi: yürünen=1 total=1 dup=0
+PASS · F5-03 kategori tüm sayfalar: mükerrer yok + toplam tutar — aksiyon: yürünen=1 total=1 dup=0 | komedi: yürünen=1 total=1 dup=0
 PASS · F5-04 geçmiş tüm sayfalar: mükerrer yok + toplam tutar — yürünen=1 total=1 dup=0
-PASS · F5-05 favoriler: tam liste (meta sözleşme gereği yok) mükerrer yok + eklenen listede — öğe=3 dup=0 eklenenListede=true
-PASS · F5-06a izolasyon önkosulu: yayında bölüm bulundu — qa9-dizi-mvp59lji S1B1
+PASS · F5-05 favoriler: tam liste (meta sözleşme gereği yok) mükerrer yok + eklenen listede — öğe=1 dup=0 eklenenListede=true
+PASS · F5-06a izolasyon önkosulu: yayında bölüm bulundu — gece-yarisi-treni S1B1
 PASS · F5-06b A'nın favorisi + ilerlemesi kaydedildi
 PASS · F5-06c B'nin listelerinde A'nın verisi YOK (watchlist/history/continue) — watchlist=0 history=0 continue=0
 PASS · F5-06d tek-kayıt ucu: A kendi pozisyonunu görür, B sıfır-durum alır (sızma yok) — A=200 poz=42 | B=200 poz=0 tamamlandı=false
@@ -14,8 +14,8 @@ PASS · F5-06f A'nın listesi bozulmadı — aList=200 öge=1 gorur=true {}
 PASS · F5-07a taslak oluşturuldu (admin)
 PASS · F5-07b TASLAK: kullanıcıya detay/arama/liste/home sızma YOK — detay=404
 PASS · F5-07c ARŞİV: kullanıcıya detay/arama/liste sızma YOK (yayın dönemi görünürdü) — yayın=200 arşiv=404
-PASS · F5-08 detay sezon/bölüm sayıları DB ile birebir — qa9-dizi-mvp59lji: api=1 sezon db=1 | gece-yarisi-treni: api=1 sezon db=1
-PASS · F5-09 kategori listeleri tutarlı (5 kategori) — aksiyon=3,komedi=1,dram=5,gerilim=4,romantik=1
+PASS · F5-08 detay sezon/bölüm sayıları DB ile birebir — gece-yarisi-treni: api=1 sezon db=1 | son-vardiya: api=1 sezon db=1
+PASS · F5-09 kategori listeleri tutarlı (5 kategori) — aksiyon=1,komedi=1,dram=3,gerilim=4,romantik=1
 
 FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
 {
@@ -26,7 +26,7 @@ FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
       "id": "F5-01",
       "name": "titles tüm sayfalar: mükerrer yok + toplam tutar",
       "ok": true,
-      "extra": "yürünen=11 total=11 dup=0"
+      "extra": "yürünen=6 total=6 dup=0"
     },
     {
       "id": "F5-02",
@@ -38,7 +38,7 @@ FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
       "id": "F5-03",
       "name": "kategori tüm sayfalar: mükerrer yok + toplam tutar",
       "ok": true,
-      "extra": "aksiyon: yürünen=3 total=3 dup=0 | komedi: yürünen=1 total=1 dup=0"
+      "extra": "aksiyon: yürünen=1 total=1 dup=0 | komedi: yürünen=1 total=1 dup=0"
     },
     {
       "id": "F5-04",
@@ -50,13 +50,13 @@ FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
       "id": "F5-05",
       "name": "favoriler: tam liste (meta sözleşme gereği yok) mükerrer yok + eklenen listede",
       "ok": true,
-      "extra": "öğe=3 dup=0 eklenenListede=true"
+      "extra": "öğe=1 dup=0 eklenenListede=true"
     },
     {
       "id": "F5-06a",
       "name": "izolasyon önkosulu: yayında bölüm bulundu",
       "ok": true,
-      "extra": "qa9-dizi-mvp59lji S1B1"
+      "extra": "gece-yarisi-treni S1B1"
     },
     {
       "id": "F5-06b",
@@ -110,13 +110,13 @@ FAZ 5 ek probe sonucu: 16 PASS, 0 FAIL (toplam 16)
       "id": "F5-08",
       "name": "detay sezon/bölüm sayıları DB ile birebir",
       "ok": true,
-      "extra": "qa9-dizi-mvp59lji: api=1 sezon db=1 | gece-yarisi-treni: api=1 sezon db=1"
+      "extra": "gece-yarisi-treni: api=1 sezon db=1 | son-vardiya: api=1 sezon db=1"
     },
     {
       "id": "F5-09",
       "name": "kategori listeleri tutarlı (5 kategori)",
       "ok": true,
-      "extra": "aksiyon=3,komedi=1,dram=5,gerilim=4,romantik=1"
+      "extra": "aksiyon=1,komedi=1,dram=3,gerilim=4,romantik=1"
     }
   ]
 }

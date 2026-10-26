@@ -429,3 +429,22 @@ Stage Summary:
 - Sonuç: FAZ 9 kapsamı tamam — 8 backend gereksinimi (tercihler, ayrı servis, çoklu cihaz, geçersiz token temizliği, mükerrer önleme, zamanlanmış görev karar, gönderim izleme, okundu durumu) + mobil push/derin bağlantı/merkez + admin izleme ekranı uçtan uca kanıtlı.
 - Dürüst sınırlar: gerçek cihaz push (APNs/FCM) doğrulanamadı — simüle sağlayıcıyla uçtan uca + exp.host adapter hazır; EAS projectId placeholder; BullMQ belgelendi uygulanmadı.
 - Sonraki ajan için: push-debug env'i (PUSH_DISPATCH_DEBUG) kaldırıldı; runner kalıntı temizliği kendi içinde; gerçek cihaz testi PUSH_SETUP §4-5; kampanya gönderim ekranı admin /notifications'ta "Gönderim" butonuyla.
+
+---
+Task ID: 11
+Agent: Ana ajan (Z.ai)
+Task: FAZ 9 Testi (Push ve Uygulama İçi Bildirimleri) — bildirim altyapısının kabul doğrulaması
+
+Work Log:
+- Doğrulanan faz: FAZ 9 (commit 578f762). Ortam: PG 16 ayaktaydı, mobile node_modules hoisted kökte (nodeLinker=hoisted — apps/*/node_modules olmaması normal), migration'lar güncel, dist + admin build yeniden derlendi.
+- Statik: typecheck 4/4, lint 4/4 (QA'nın kendi eklediği spec'te 1 unused-var hatası çıktı → düzeltildi). Testler: 520/520 (contracts 95 + api 272 + mobile 153). Build: api ✅, admin 13/13 rota (PPR korunur).
+- Canlı kabul: bash scripts/qa-faz9-run-acceptance.sh → 36/36 PASS (cihaz token/upsert/çoklu cihaz/401, taslak-favori kuralı, NEW_EPISODE/NEW_CONTENT doğru hedef, dedup, tercih süzme, dispatch izleme, kampanya fan-out + admin iz ucu + maskeli token, geçersiz token DeviceNotRegistered→invalidAt, hatırlatma dönem dedup, in-app okuma) + DB denetimi (D1-D5: tür dağılımı, SENT=6/FAILED=2, invalidAt kanıtı, dedup ihlali 0, hatırlatma 1/dönem).
+- KUSUR YOK ürün kodunda; dört QA kalemi: F9-QA-01 (Orta, araç): qa-faz8-cleanup-p2c-rerun.sh qa içeriklerini silemiyordu — watch_history/playback_sessions/episode_unlocks Restrict FK'leri önce silinmeliydi (7 yetim içerik → katalog sıralaması bozuk; set -e olmadığından DELETE sessizce başarısız) → silme sırası düzeltildi, kalan=0. F9-QA-02 (Orta, araç): aynı betik P2C probe'unu taban adresi geçmeden çağırıyordu (probe varsayılan :3000, API :3002) → ECONNREFUSED çökmesi; http://127.0.0.1:3002 argümanı eklendi. F9-QA-03 (Düşük, test boşluğu): retry yolu (sağlayıcı erişilemez→PENDING+attempts++, MAX_ATTEMPTS→FAILED) ve toPushMessage izin listesi için otomatik kanıt yoktu → 16 yeni birim test (push.provider.spec.ts 8 + push-dispatch.spec.ts 8; F9-01 sendId korelasyon regresyonu dahil). F9-QA-04 (Düşük): yeni spec lint hatası → _args.
+- İlk P2C koşumu 39/40'tı: ürün regresyonu DEĞİL — koşum anında en yeni yayınlanan yapım qa8-film (0 sezon) olduğu için P2C-18'in "ilk yapımın bölüm satırı" varsayımı bozuldu (bilinen veri kirliliği); düzeltilmiş temizlik sonrası P2C 41/41.
+- Regresyon: faz4 44/44, faz6 18/18, faz7 kabul TÜMÜ GEÇTİ (FAZ 9'un billing'e eklediği bildirim kancaları akışları bozmuyor), faz8 kabul 102/102, P2C 41/41 (temizlik sonrası), F5 16/16, AUTH 22/22, api entegrasyon suitleri (faz2b/2c/3/4/7/8/9) 272/272 içinde.
+- Rapor: docs/qa/FAZ-9-QA.md (PASS WITH WARNINGS). Değişen dosyalar: 2 yeni spec + qa-faz8-cleanup-p2c-rerun.sh; ürün kodu değişmedi.
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriteri (tercihler uygulanıyor, doğru hedefe yönlendirme, mükerrer kontrolü) canlı + otomatik kanıtla sağlandı; kritik hata yok, sonraki faza geçilebilir.
+- Dürüst sınırlar: gerçek cihaz push (APNs/FCM), OS izin diyaloğu, soğuk başlangıç cihaz üstü doğrulanamadı (cihaz/EAS projectId yok) — PUSH_SETUP §4-5 üretim öncesi zorunlu; exp.host adapter mock fetch ile birim testli.
+- Sonraki ajan için: P2C probe'u öncesi qa-faz8-cleanup-p2c-rerun.sh koş (artık Restrict FK'leri de temizliyor + probe'a taban adresi geçiyor); P2C-18 "ilk yapım" varsayımı yüzünden QA verisi temiz değilse FAIL üretir (ürün hatası değil); 520 otomatik test tabanı artık 272 api içeriyor.

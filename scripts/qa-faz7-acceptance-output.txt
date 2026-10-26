@@ -1,4 +1,4 @@
-FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T10:40:27+00:00
+FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T11:04:42+00:00
 
 ########## FAZ A: sağlayıcı=none, NODE_ENV=test, port 3199 ##########
 
@@ -42,10 +42,10 @@ FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T10:40:27+00:00
 [PASS] B-08-rc-kredi-paketi-ve-iade-clawback — RC kredi paketi +25 → harcama 2 → REFUND clawback → purchased=0, REFUND ledger tek satır, iade tekrarı SKIPPED
 [PASS] B-09-rc-bilinmeyen-kullanici-ve-urun-failed — bilinmeyen kullanıcı/ürün → FAILED (sessiz kayıp yok), kredi verilmedi
 [PASS] B-10-rc-billing-issue-grace-ve-hold — BILLING_ISSUE: grace'siz → ON_HOLD (erişim durur), grace'li → GRACE_PERIOD (hak sürer)
-[PASS] B-11-rc-transfer-sahiplik — TRANSFER → işlem cmvp4ld0… → cmvp4ld0… taşındı (kredi bakiyesi faz kaydı: harcama cüzdanı kaynakta kalır — raporda belgeli sınırlama)
+[PASS] B-11-rc-transfer-sahiplik — TRANSFER → işlem cmvp5gj9… → cmvp5gja… taşındı (kredi bakiyesi faz kaydı: harcama cüzdanı kaynakta kalır — raporda belgeli sınırlama)
 [PASS] B-12-rc-test-ve-bilinmeyen-olay-tipi — TEST no-op PROCESSED; ileri uyum: bilinmeyen olay hataya düşmez
 [PASS] B-14-sync-saglayici-erisilemez-503 — RC erişilemez → sync 503 BILLING_PROVIDER_UNREACHABLE (fail-closed, sahte senkron yok)
-[PASS] B-13-webhook-events-denetim-izi — UNIQUE(source,eventId) ihlali yok; durum dağılımı: FAILED=6, PROCESSED=63, SKIPPED=9
+[PASS] B-13-webhook-events-denetim-izi — UNIQUE(source,eventId) ihlali yok; durum dağılımı: FAILED=8, PROCESSED=84, SKIPPED=12
 
 --- FAZ B SONUÇ: 14 PASS, 0 WARN, 0 FAIL (toplam 14) ---
 

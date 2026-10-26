@@ -57,6 +57,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       return exception.getStatus();
     }
+    // Kusur F7-04: Prisma bilinen hataları gövdede CONFLICT/NOT_FOUND zarfına
+    // çevriliyordu ama HTTP durumu 500 kalıyordu (eşzamanlı bölüm açma
+    // yarışında kaybeden istemci 500 görüyordu). Durum kodu da eşlenir.
+    const prismaKnown = exception as
+      | (Prisma.PrismaClientKnownRequestError & { code?: string })
+      | undefined;
+    if (
+      prismaKnown &&
+      typeof prismaKnown === 'object' &&
+      typeof prismaKnown.code === 'string' &&
+      prismaKnown.code.startsWith('P')
+    ) {
+      if (prismaKnown.code === 'P2002') return HttpStatus.CONFLICT;
+      if (prismaKnown.code === 'P2025') return HttpStatus.NOT_FOUND;
+    }
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }
 

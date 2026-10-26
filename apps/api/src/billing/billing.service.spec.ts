@@ -585,3 +585,186 @@ describe('Faz 7 — RevenueCat webhook olay işleme', () => {
     expect(result.wallet).toEqual({ purchased: 0, granted: 0, total: 0 });
   });
 });
+
+// ===========================================================================
+// FAZ 7 QA düzeltmeleri — F7-03 (iade clawback üst sınırı) ve F7-05 (TRANSFER
+// app_user_id'siz zarf) regresyon testleri.
+// ===========================================================================
+describe('BillingService.applyRefund — clawback kalan bakiyeyi aşamaz (F7-03)', () => {
+  function refundPrisma(walletRow: { purchasedBalance: number; grantedBalance: number }) {
+    const ledgerCalls: Array<Record<string, unknown>> = [];
+    const tx = {
+      storeTransaction: {
+        findUnique: vi.fn(async () => ({
+          id: 'stx_1',
+          userId: 'u_9',
+          platform: 'IOS',
+          productType: 'CREDIT_PACK',
+          productId: 'PACK_25',
+          storeTransactionId: 'tx_ref_1',
+          refundedAt: null,
+        })),
+        update: vi.fn(async () => ({})),
+      },
+      creditWallet: { findUnique: vi.fn(async () => walletRow) },
+      creditPack: { findUnique: vi.fn(async () => ({ code: 'PACK_25', credits: 25, bonusCredits: 5 })) },
+    };
+    const prisma = {
+      webhookEvent: {
+        create: vi.fn(async () => ({ id: 'we_r1' })),
+        update: vi.fn(async () => ({})),
+      },
+      $transaction: vi.fn(async (cb: unknown) => await (cb as (t: unknown) => Promise<void>)(tx)),
+    };
+    const appendLedger = vi.fn(async (_tx: unknown, entry: Record<string, unknown>) => {
+      ledgerCalls.push(entry);
+      return 'ledger_1';
+    });
+    return { prisma, tx, appendLedger, ledgerCalls };
+  }
+
+  it('harcanmış hediye kredi geri istenmez (purchased tam, granted kalan kadar)', async () => {
+    // PACK_25: +25 satın alınan, +5 hediye; kullanıcı 2 hediye kredi harcadı
+    // (canlı koşumda F7-03 ile yakalanan senaryo) → kalan p=25, g=3.
+    const { prisma, appendLedger, ledgerCalls } = refundPrisma({ purchasedBalance: 25, grantedBalance: 3 });
+    const svc = new BillingService(
+      prisma as unknown as PrismaService,
+      { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
+      {} as SubscriptionsService,
+      env as never,
+      makeProvider(),
+    );
+    const result = await svc.ingestWebhook({
+      source: 'REVENUECAT',
+      eventId: 'evt_refund_1',
+      eventType: 'PURCHASE_REFUNDED',
+      payload: { platform: 'IOS', storeTransactionId: 'tx_ref_1' },
+      signatureValid: true,
+    });
+    expect(result.state).toBe('PROCESSED');
+    expect(appendLedger).toHaveBeenCalledTimes(1);
+    // Clawback: satın alınan 25'in tamamı + kalan hediye 3 → harcanan 2 geri istenmez.
+    expect(ledgerCalls[0]).toMatchObject({ type: 'REFUND', purchasedDelta: -25, grantedDelta: -3 });
+  });
+
+  it('kalan bakiye sıfırsa ledger yazılmaz ama işlem REFUNDED işaretlenir', async () => {
+    const { prisma, tx, appendLedger } = refundPrisma({ purchasedBalance: 0, grantedBalance: 0 });
+    const svc = new BillingService(
+      prisma as unknown as PrismaService,
+      { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
+      {} as SubscriptionsService,
+      env as never,
+      makeProvider(),
+    );
+    const result = await svc.ingestWebhook({
+      source: 'REVENUECAT',
+      eventId: 'evt_refund_2',
+      eventType: 'PURCHASE_REFUNDED',
+      payload: { platform: 'IOS', storeTransactionId: 'tx_ref_1' },
+      signatureValid: true,
+    });
+    expect(result.state).toBe('PROCESSED');
+    expect(appendLedger).not.toHaveBeenCalled();
+    expect(tx.storeTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ purchaseState: 'REFUNDED' }),
+      }),
+    );
+  });
+
+  it('her şey harcanmışsa clawback kalan toplamla sınırlıdır (negatif ledger yok)', async () => {
+    // Kullanıcı 30 kredinin 12'sini harcadı (hediye önce) → kalan p=20, g=3... örnek:
+    // p=18, g=0 → clawback p=min(25,18)=18, refundTotal=min(30,18)=18 → g=0.
+    const { appendLedger, ledgerCalls } = refundPrisma({ purchasedBalance: 18, grantedBalance: 0 });
+    const prisma = {
+      webhookEvent: {
+        create: vi.fn(async () => ({ id: 'we_r3' })),
+        update: vi.fn(async () => ({})),
+      },
+      $transaction: vi.fn(async (cb: unknown) => await (cb as (t: unknown) => Promise<void>)({
+        storeTransaction: {
+          findUnique: vi.fn(async () => ({
+            id: 'stx_1', userId: 'u_9', platform: 'IOS', productType: 'CREDIT_PACK',
+            productId: 'PACK_25', storeTransactionId: 'tx_ref_1', refundedAt: null,
+          })),
+          update: vi.fn(async () => ({})),
+        },
+        creditWallet: { findUnique: vi.fn(async () => ({ purchasedBalance: 18, grantedBalance: 0 })) },
+        creditPack: { findUnique: vi.fn(async () => ({ code: 'PACK_25', credits: 25, bonusCredits: 5 })) },
+      })),
+    };
+    const svc = new BillingService(
+      prisma as unknown as PrismaService,
+      { purchasePack: vi.fn(), appendLedgerAndRecompute: appendLedger } as unknown as CreditsService,
+      {} as SubscriptionsService,
+      env as never,
+      makeProvider(),
+    );
+    const result = await svc.ingestWebhook({
+      source: 'REVENUECAT',
+      eventId: 'evt_refund_3',
+      eventType: 'PURCHASE_REFUNDED',
+      payload: { platform: 'IOS', storeTransactionId: 'tx_ref_1' },
+      signatureValid: true,
+    });
+    expect(result.state).toBe('PROCESSED');
+    expect(ledgerCalls[0]?.type).toBe('REFUND');
+    expect(ledgerCalls[0]?.purchasedDelta).toBe(-18);
+    // -0/0 ayrımı Object.is ile korunur; iş kuralı açısından ikisi de 0'dır.
+    expect(Math.abs(Number(ledgerCalls[0]?.grantedDelta ?? -1))).toBe(0);
+  });
+});
+
+describe('BillingService.processRevenueCatEvent — TRANSFER zarfı (F7-05)', () => {
+  it('app_user_id taşımayan TRANSFER PROCESSED olur ve sahipliği taşır', async () => {
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const prisma = {
+      user: { findUnique: vi.fn(async () => ({ id: 'u_to' })) },
+      webhookEvent: {
+        create: vi.fn(async () => ({ id: 'we_t1' })),
+        update: vi.fn(async () => ({})),
+      },
+      $transaction: vi.fn(async (cb: unknown) => await (cb as (t: unknown) => Promise<void>)({
+        storeTransaction: { updateMany },
+        subscription: { updateMany },
+        episodeUnlock: { updateMany },
+      })),
+    };
+    const svc = makeService(prisma);
+    const result = await svc.ingestWebhook({
+      source: 'REVENUECAT',
+      eventId: 'evt_transfer_1',
+      eventType: 'TRANSFER',
+      payload: {
+        transferred_from: ['eski-kullanici'],
+        transferred_to: ['u_to'],
+        original_transaction_id: 'orig_tx_9',
+        product_id: 'perdego.pack.pack_10',
+      },
+      signatureValid: true,
+    });
+    expect(result.state).toBe('PROCESSED');
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'u_to' } }),
+    );
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { userId: 'u_to' } }),
+    );
+  });
+});
+
+describe('BillingService.syncEntitlements — sağlayıcı erişilemezse 503 (F7-06)', () => {
+  it('fetchSubscriberState hatası 503 BILLING_PROVIDER_UNREACHABLE olur (500 değil)', async () => {
+    const prisma = {};
+    const provider = makeProvider({
+      fetchSubscriberState: vi.fn(async () => {
+        throw new Error('REVENUECAT_UNREACHABLE');
+      }),
+    });
+    const svc = makeService(prisma, provider);
+    await expect(svc.syncEntitlements('u_1', 'IOS')).rejects.toMatchObject({
+      status: 503,
+      reason: 'BILLING_PROVIDER_UNREACHABLE',
+    });
+  });
+});

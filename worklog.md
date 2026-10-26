@@ -343,3 +343,23 @@ Stage Summary:
 - Güvenlik gereksinimleri: 1 (istemci beyanına güvenme), 2 (doğrulama+webhook), 3 (benzersiz işlem idempotensi), 4 (imza/kaynak/yeniden gönderim), 5 (ledger tabanlı kredi), 6 (atomik unlock), 7 (iade düzeltmesi), 8 (süresiz satın alınan kredi — expires_at NULL test edildi), 9 (prod'da sahte başarı yok — 503 + simülasyon yasağı), 10 (mağaza fiyatı) karşılandı.
 - Dürüst sınırlar: RC anahtarları/webhook yok (sandbox hesabı yok) → canlı RC ters sorgusu ve gerçek mağaza satın alması doğrulanamadı; RC SDK jest'te native olmadığından cihaz üstü akış EAS derlemesi ister. Bunlar BILLING_SETUP §6 checklist'inde açıkça listeli.
 - Sonraki ajan için: RC sandbox hesabı açılırsa BILLING_SETUP.md §2-6 adımları uygulanıp QA yapılmalı; admin panelinde store_transactions görünümleri Faz 8 adayı; RC v2 API'ye geçiş (refund alanları) izlenebilir.
+
+---
+Task ID: 16
+Agent: Ana ajan (Z.ai)
+Task: FAZ 7 Testi (Satın Alma ve Kredi Güvenliği) — abonelik/kredi satın alma altyapısının kabul doğrulaması
+
+Work Log:
+- Doğrulanan faz: FAZ 7 (commit 630c93f). Ortam: gömülü PG 16 zaten ayaktaydı, migration'lar güncel (6), dist yeniden derlendi.
+- Statik: typecheck 4/4, lint 4/4, build (api+admin) yeşil. Testler: 416 (contracts 71 + api 203 + mobile 142).
+- Canlı kabul probe'u YAZILDI ve koşuldu: scripts/qa-faz7-run-acceptance.sh + apps/api/scripts/qa-faz7-acceptance-probe.cjs + qa-faz7-prod-refine-check.ts → 3 faz (sağlayıcı yok/revenuecat test anahtarı/üretim şeması) 42/42 PASS (çıktı: scripts/qa-faz7-acceptance-output.txt). Kapsam: abonelik 6 + kredi 9 + güvenlik 7 madde, DB denetim sorgularıyla (ledger/webhook_events/store_transactions).
+- ORTAM TUZAĞI: önceki oturumdan kalma dist/main.js süreci (perdego_faz7_test DB'li) 3199 portunu işgal etmişti; yeni sunucu EADDRINUSE ile sessizce ölüyor, probe ESKİ süreci test ediyordu (belirti: health 1 denemede hazır + DB denetimleri boş). Runner'a koşum öncesi port temizliği + QA rate-limit gevşetmesi eklendi.
+- BULUNAN VE DÜZELTİLEN KUSURLAR: F7-03 (YÜKSEK): iade clawback'i harcanmış hediye krediyi hesaba katmıyordu → ledger negatif → REFUND webhook FAILED; applyRefund kalan-bakiye üst sınırlı formüle çevrildi (+3 birim test). F7-04 (ORTA): error-filter statusOf Prisma hatalarını durum koduna çevirmiyordu — P2002 gövde CONFLICT ama HTTP 500 (paralel unlock kaybedeni 500); P2002→409/P2025→404 eklendi (+2 test). F7-05 (DÜŞÜK): app_user_id'siz RC TRANSFER FAILED oluyordu; TRANSFER artık app_user_id şartından önce işlenir (+1 test). F7-06 (DÜŞÜK): syncEntitlements sağlayıcı erişilemezken 500 → validate ile tutarlı 503 BILLING_PROVIDER_UNREACHABLE (+1 test).
+- Araç düzeltmeleri: JSONB anahtar sırası nedeniyle idempotency yanıt karşılaştırması anlamsal eşitliğe çevrildi; A-14 sorgusu LIKE→IN.
+- Regresyon: tüm entegrasyon suitleri (faz2b/2c/3/4/7) 203/203; canlı P2C 41 + F5 16 + AUTH 22 + faz6 güvenlik 18 + faz2b smoke 13 = 110/110.
+- Rapor: docs/qa/FAZ-7-QA.md (PASS WITH WARNINGS). Değişen ürün dosyaları: billing.service.ts, error-filter.ts + spec'leri; yeni QA araçları 3 dosya.
+
+Stage Summary:
+- Karar: PASS WITH WARNINGS — kabul kriteri (onaylanmamış işlemle kredi yok, tekrar işlem çift işlenmez, yetki sunucuda doğrulanır) canlı kanıtla sağlandı; 4 kusur düzeltildi, regresyon temiz.
+- Dürüst sınırlar: RC sandbox hesabı/mağaza ürünleri yok → gerçek satın alma doğrulaması yapılamadı (test anahtarıyla RC API 401→503 fail-closed kanıtlı); gerçek cihaz/EAS yok; üretim tam boot'u bilinçli engelli (MEDIA_PROVIDER kuralı) — üretim savunmaları şema+sağlayıcı düzeyinde 7 kontrolle kanıtlı.
+- Sonraki ajan için: RC sandbox açılırsa BILLING_SETUP §2-6 + qa-faz7-run-acceptance.sh yeniden koşulmalı; TRANSFER kredi faz kaydı ürün kararı bekliyor; port işgali tuzağına dikkat — koşum öncesi dinleyici temizliği runner'larda standart olmalı.

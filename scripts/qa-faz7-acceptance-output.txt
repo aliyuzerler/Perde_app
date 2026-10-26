@@ -1,0 +1,64 @@
+FAZ 7 KABUL PROBE KOŞUMU — 2026-10-26T04:19:45+00:00
+
+########## FAZ A: sağlayıcı=none, NODE_ENV=test, port 3199 ##########
+
+===== FAZ 7 KABUL PROBE — FAZ A → http://127.0.0.1:3199 =====
+
+[PASS] A-01-config-durum-urun-esleme — provider=none, sub ürünler 2, paketler 3, Apple/Google kimlikleri DB ile birebir
+[PASS] A-02-urun-fiyatlari-sunucudan — planlar SUB_MONTHLY=4990kr, SUB_YEARLY=39990kr (fiyat sunucu DB'sinden)
+[PASS] A-03-kredi-paketi-dogrulama-bakiye — PACK_10 → 10 kredi, cüzdan doğru
+[PASS] A-04-ledger-purchase-yazimi — PURCHASE +10, expires_at=NULL (süresiz bakiye)
+[PASS] A-05-idempotency-key-tekrari-ayni-yanit — aynı Idempotency-Key → birebir aynı yanıt, bakiye tek eklendi
+[PASS] A-06-ayni-store-tx-iki-kez-islenmez — UNIQUE(platform,tx) tekrarı yakaladı, tek ledger satırı
+[PASS] A-07-baska-kullanicinin-tx-hirsizligi — hırsızın kendi cüzdanı: 'yeni kredi yok' — başka kullanıcının işlemi kredi vermez
+[PASS] A-08-istemci-fiyat-kredi-beyani-guvenilmez — istemci priceKurus=1 dedi; kredi DB'den +10, işlem kaydı priceKurus=1 (metadata, hak bakiyeyi etkilemez)
+[PASS] A-09-bilinmeyen-urun-reddedilir — sahte ürün → 404 NOT_FOUND, kredi verilmedi
+[PASS] A-10-idempotency-key-zorunlu — Idempotency-Key olmadan 400 (BR-06)
+[PASS] A-11-kreditsiz-unlock-402 — 402 INSUFFICIENT_CREDITS (bakiye=0, maliyet=2) — doğrulanmamış işlemle kredi/hak verilmedi
+[PASS] A-12-unlock-dogru-maliyet-ve-ikinci-acma — maliyet 2 düşüldü (8 kaldı), ikinci açma ek kredi düşmedi, tek ledger satırı
+[PASS] A-13-eszamanli-iki-unlock-atomik — paralel 2 istek [201,409] → tek harcama, bakiye 8 (FOR UPDATE kilidi)
+[PASS] A-14-imzasiz-ve-yanlis-imzali-webhook-reddi — imzasız + yanlış imza → SKIPPED, webhook_events denetim izinde
+[PASS] A-15-hmac-abonelik-aktivasyonu-hak — aboneliksiz 402 → webhook PROCESSED → status=TRIALING, oturum 201 (sunucu yetki doğrulaması)
+[PASS] A-16-webhook-tekrari-skip-cift-isleme-yok — aynı eventId tekrarı → duplicate=true SKIPPED, tek işlem kaydı
+[PASS] A-17-iade-abonelik-expired — abonelik iadesi → EXPIRED + entitlement=false
+[PASS] A-18-rc-webhook-yapilandirmamis-503 — sağlayıcı yokken RC webhook 503 fail-closed
+[PASS] A-19-sync-simule-sahte-durum-yok — simüle sağlayıcıda sync boş durum → NONE (201), sahte hak yok
+[PASS] A-20-kimlik-dogrulamasi-401 — anonim/sahte token → 401 (erişim yetkisi sunucuda)
+[PASS] A-21-purchases-gecmis-ve-sayfalama — işlem geçmişi 1 kayıt, purchaseState=PURCHASED
+
+--- FAZ A SONUÇ: 21 PASS, 0 WARN, 0 FAIL (toplam 21) ---
+
+########## FAZ B: sağlayıcı=revenuecat (test anahtarları), port 3198 ##########
+
+===== FAZ 7 KABUL PROBE — FAZ B → http://127.0.0.1:3198 =====
+
+[PASS] B-01-config-revenuecat — provider=revenuecat, configured=true (test anahtarları)
+[PASS] B-02-validate-fail-closed-503 — RC erişilemez → 503 fail-closed, kredi verilmedi (test RC anahtarı geçersiz)
+[PASS] B-03-rc-initial-purchase-abonelik — RC zarfı INITIAL_PURCHASE → TRIALING, dönem bitişi mağazadan (2026-11-02)
+[PASS] B-04-rc-webhook-tekrari-skip — aynı RC eventId tekrar → duplicate SKIPPED
+[PASS] B-05-rc-yanlis-bearer-skip — yanlış Bearer → SKIPPED INVALID_SIGNATURE (timing-safe karşılaştırma)
+[PASS] B-06-rc-iptal-ve-expiration — CANCELLATION → autoRenew=false (hak dönem sonuna kadar), EXPIRATION → EXPIRED
+[PASS] B-07-rc-uncancellation-resume — UNCANCELLATION → otomatik yenileme geri açıldı
+[PASS] B-08-rc-kredi-paketi-ve-iade-clawback — RC kredi paketi +25 → harcama 2 → REFUND clawback → purchased=0, REFUND ledger tek satır, iade tekrarı SKIPPED
+[PASS] B-09-rc-bilinmeyen-kullanici-ve-urun-failed — bilinmeyen kullanıcı/ürün → FAILED (sessiz kayıp yok), kredi verilmedi
+[PASS] B-10-rc-billing-issue-grace-ve-hold — BILLING_ISSUE: grace'siz → ON_HOLD (erişim durur), grace'li → GRACE_PERIOD (hak sürer)
+[PASS] B-11-rc-transfer-sahiplik — TRANSFER → işlem cmvoqzrh… → cmvoqzri… taşındı (kredi bakiyesi faz kaydı: harcama cüzdanı kaynakta kalır — raporda belgeli sınırlama)
+[PASS] B-12-rc-test-ve-bilinmeyen-olay-tipi — TEST no-op PROCESSED; ileri uyum: bilinmeyen olay hataya düşmez
+[PASS] B-14-sync-saglayici-erisilemez-503 — RC erişilemez → sync 503 BILLING_PROVIDER_UNREACHABLE (fail-closed, sahte senkron yok)
+[PASS] B-13-webhook-events-denetim-izi — UNIQUE(source,eventId) ihlali yok; durum dağılımı: FAILED=10, SKIPPED=10, PROCESSED=67
+
+--- FAZ B SONUÇ: 14 PASS, 0 WARN, 0 FAIL (toplam 14) ---
+
+########## FAZ C: üretim savunma kanıtları (env şeması + sağlayıcı) ##########
+[PASS] C-01-prod-jwt-zorunlu — reddedildi: - JWT_ACCESS_PRIVATE_KEY: PRODUCTION ortamında JWT anahtarları zorunludur (geliştirmede geçici üretilir)
+[PASS] C-02-prod-local-media-reddedilir — reddedildi: - MEDIA_PROVIDER: PRODUCTION ortamında MEDIA_PROVIDER=local seçilemez (docs/MEDIA_SETUP.md — canlı sağlayıcı kurulumuna bakın)
+[PASS] C-03-prod-webhook-sirri-zorunlu — reddedildi: - WEBHOOK_SIGNING_SECRET: PRODUCTION ortamında WEBHOOK_SIGNING_SECRET zorunludur — oynatma/yükleme imza sırrı; DATABASE_URL türetimli fallback yalnız geliştirme
+[PASS] C-04-prod-rc-yarim-yapilandirma — reddedildi: - BILLING_PROVIDER: BILLING_PROVIDER=revenuecat için REVENUECAT_SECRET_API_KEY ve REVENUECAT_WEBHOOK_AUTH_SECRET birlikte zorunludur (docs/BILLING_SETUP.md) | -
+[PASS] C-05-prod-rc-public-sdk-zorunlu — reddedildi: - REVENUECAT_PUBLIC_SDK_KEY: PRODUCTION + BILLING_PROVIDER=revenuecat için REVENUECAT_PUBLIC_SDK_KEY zorunludur (mobil SDK herkese açık anahtar)
+[PASS] C-06-prod-gecerli-yapilandirma — üretim + tam RC yapılandırması kabul edildi
+[PASS] C-07-simule-saglayici-uretimde-kapali — configured=false (true), verifyPurchase throw=true, fetchSubscriberState throw=true (sahte başarı üretilemez)
+
+--- FAZ C SONUÇ: 7 PASS, 0 FAIL ---
+
+KOŞUM ÖZETİ: FAZ A=0, FAZ B=0, FAZ C=0 (0=başarılı)
+KABUL PROBE: TÜMÜ GEÇTİ

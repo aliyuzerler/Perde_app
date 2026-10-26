@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ZodError } from 'zod';
+import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './error-filter';
 import { DomainError } from './errors';
 
@@ -76,5 +77,31 @@ describe('AllExceptionsFilter zarf çevirisi', () => {
     const { body } = run(DomainError.notFound('CONTENT_NOT_FOUND', 'errors.contentNotFound'));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((body as any).error.message).toBe('errors.contentNotFound');
+  });
+});
+
+describe('AllExceptionsFilter Prisma durum eşlemesi (F7-04)', () => {
+  it('P2002 → HTTP 409 + CONFLICT zarfı (eşzamanlı unlock kaybedeni 500 görmez)', () => {
+    const err = new Prisma.PrismaClientKnownRequestError('unique', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    const { status, body } = run(err);
+    expect(status).toBe(409);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = body as any;
+    expect(b.error.code).toBe('CONFLICT');
+    expect(b.error.details.reason).toBe('UNIQUE_CONSTRAINT');
+  });
+
+  it('P2025 → HTTP 404 + NOT_FOUND zarfı', () => {
+    const err = new Prisma.PrismaClientKnownRequestError('yok', {
+      code: 'P2025',
+      clientVersion: 'test',
+    });
+    const { status, body } = run(err);
+    expect(status).toBe(404);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((body as any).error.code).toBe('NOT_FOUND');
   });
 });

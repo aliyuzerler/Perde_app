@@ -234,6 +234,15 @@ export class BillingService {
       return;
     }
 
+    // TRANSFER (Kusur F7-05): sahiplik aktarımı transferred_to + orijinal
+    // işlem kimliğiyle yapılır; RC zarfı bu olayda app_user_id taşımayabilir.
+    // app_user_id şartı TRANSFER için uygulanmaz (yoksa geçerli aktarım
+    // FAILED olurdu).
+    if (eventType === 'TRANSFER') {
+      await this.applyTransfer(event);
+      return;
+    }
+
     const appUserId =
       typeof event.app_user_id === 'string' && event.app_user_id.length > 0
         ? event.app_user_id
@@ -317,10 +326,7 @@ export class BillingService {
         return;
 
       // --- Hesap aktarımı (Geri Yükleme / cihaz değişimi) ---------------------
-      case 'TRANSFER': {
-        await this.applyTransfer(event, originalTransactionId);
-        return;
-      }
+      // TRANSFER yukarıda app_user_id şartından önce ele alınır (F7-05).
 
       default:
         // Bilinmeyen RC olay tipi: kayda geçti, hataya düşmez (ileri uyum).
@@ -378,12 +384,23 @@ export class BillingService {
   /**
    * TRANSFER: RC, satın alma ailesini yeni app_user_id'ye taşır (cihaz
    * değişimi / restore). İşlemler ve açık abonelik yeni sahibine yazılır.
+   * Not (raporda belgeli sınırlama): kredi ledger/cüzdan kaynak kullanıcıda
+   * kalır; açılmış bölümler ve abonelik hakkı yeni sahibine geçer.
    */
-  private async applyTransfer(event: Record<string, unknown>, originalTransactionId?: string): Promise<void> {
+  private async applyTransfer(event: Record<string, unknown>): Promise<void> {
     const toUserIds = Array.isArray(event.transferred_to) ? event.transferred_to : [];
     const toAppUserId = typeof toUserIds[0] === 'string' ? toUserIds[0] : undefined;
+    const fromUserIds = Array.isArray(event.transferred_from) ? event.transferred_from : [];
+    const fromAppUserId = typeof fromUserIds[0] === 'string' ? fromUserIds[0] : undefined;
+    const originalTransactionId =
+      typeof event.original_transaction_id === 'string' && event.original_transaction_id.length > 0
+        ? event.original_transaction_id
+        : typeof event.transaction_id === 'string'
+          ? event.transaction_id
+          : undefined;
     if (!toAppUserId || !originalTransactionId) return;
     const toUser = await this.resolveUserById(toAppUserId);
+    void fromAppUserId;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.storeTransaction.updateMany({
@@ -422,13 +439,22 @@ export class BillingService {
       if (storeTx.userId) {
         if (storeTx.productType === 'CREDIT_PACK') {
           // Kullanılmış krediler geri istenemez; kalan bakiye kadar düşülür.
+          // Kusur F7-03: hediye (granted) payı için de kalan bakiye üst sınırı
+          // zorunludur — harcanan hediye kredi geri istenirse ledger negatife
+          // düşer ve iade webhook'u FAILED olurdu. Kural: toplam clawback
+          // kalan toplam bakiyeyi aşamaz; satın alınan pay önce, eksik kalan
+          // kısım kalan hediye bakiyeden tamamlanır.
           const wallet = await tx.creditWallet.findUnique({ where: { userId: storeTx.userId } });
           const purchasedAvailable = Math.max(wallet?.purchasedBalance ?? 0, 0);
+          const grantedAvailable = Math.max(wallet?.grantedBalance ?? 0, 0);
           const pack = await tx.creditPack.findUnique({ where: { code: storeTx.productId } });
           const purchasedPart = pack?.credits ?? 0;
           const grantPart = pack?.bonusCredits ?? 0;
+          const remainingTotal = purchasedAvailable + grantedAvailable;
+          const wantedTotal = purchasedPart + grantPart;
+          const refundTotal = Math.min(wantedTotal, remainingTotal);
           const refundPurchased = Math.min(purchasedPart, purchasedAvailable);
-          const refundGranted = Math.max(grantPart - Math.max(purchasedPart - refundPurchased, 0), 0);
+          const refundGranted = Math.min(Math.max(refundTotal - refundPurchased, 0), grantedAvailable);
 
           if (refundPurchased > 0 || refundGranted > 0) {
             await this.credits.appendLedgerAndRecompute(tx, {
@@ -619,7 +645,21 @@ export class BillingService {
    * durum ÜRETİLMEZ.
    */
   async syncEntitlements(userId: string, platform: 'IOS' | 'ANDROID') {
-    const state: ProviderSubscriberState | null = await this.provider.fetchSubscriberState(userId);
+    // Kusur F7-06: sağlayıcıya erişilemezse senkron da doğrulama gibi
+    // FAIL-CLOSED olmalı — 500 yerine anlaşılır 503 döner (validate ile
+    // aynı sözleşme), sahte "senkronlandı" yanıtı üretilmez.
+    let state: ProviderSubscriberState | null;
+    try {
+      state = await this.provider.fetchSubscriberState(userId);
+    } catch (error) {
+      this.logger.error(`Entitlement senkronu sağlayıcıya erişemedi: ${error instanceof Error ? error.message : error}`);
+      throw new DomainError({
+        status: 503,
+        code: 'SERVICE_UNAVAILABLE',
+        messageKey: 'errors.billingProviderUnreachable',
+        reason: 'BILLING_PROVIDER_UNREACHABLE',
+      });
+    }
     const syncedAt = new Date().toISOString();
 
     // Abonelik senkronu: sağlayıcıdaki en uygun aktif dönem seçilir.
